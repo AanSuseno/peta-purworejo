@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -10,4 +5,520 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+model categories {
+  category_id          Int           @id @default(autoincrement())
+  category_name        String        @unique @db.VarChar(50)
+  category_icon        String?       @db.VarChar(50)
+  category_description String?
+  created_at           DateTime      @default(now()) @db.Timestamp(6)
+  communities          communities[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model collaboration_requests {
+  collab_id                                                             Int                @id @default(autoincrement())
+  sender_community_id                                                   Int
+  receiver_community_id                                                 Int
+  message                                                               String?
+  status                                                                collab_status_enum @default(pending)
+  event_id                                                              Int?
+  created_at                                                            DateTime           @default(now()) @db.Timestamp(6)
+  updated_at                                                            DateTime           @default(now()) @db.Timestamp(6)
+  events                                                                events?            @relation(fields: [event_id], references: [event_id], onUpdate: NoAction)
+  communities_collaboration_requests_receiver_community_idTocommunities communities        @relation("collaboration_requests_receiver_community_idTocommunities", fields: [receiver_community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  communities_collaboration_requests_sender_community_idTocommunities   communities        @relation("collaboration_requests_sender_community_idTocommunities", fields: [sender_community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([receiver_community_id], map: "idx_collab_receiver")
+  @@index([sender_community_id], map: "idx_collab_sender")
+}
+
+model communities {
+  community_id                                                                     Int                      @id @default(autoincrement())
+  community_name                                                                   String                   @db.VarChar(100)
+  community_slug                                                                   String                   @unique @db.VarChar(120)
+  description                                                                      String?
+  logo                                                                             String?                  @db.VarChar(255)
+  banner                                                                           String?                  @db.VarChar(255)
+  category_id                                                                      Int?
+  founder_id                                                                       Int
+  kecamatan                                                                        String?                  @db.VarChar(50)
+  address                                                                          String?
+  contact_email                                                                    String?                  @db.VarChar(100)
+  contact_phone                                                                    String?                  @db.VarChar(20)
+  total_members                                                                    Int                      @default(0)
+  total_score                                                                      Int                      @default(0)
+  is_verified                                                                      Boolean                  @default(false)
+  is_active                                                                        Boolean                  @default(true)
+  created_at                                                                       DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at                                                                       DateTime                 @default(now()) @db.Timestamp(6)
+  collaboration_requests_collaboration_requests_receiver_community_idTocommunities collaboration_requests[] @relation("collaboration_requests_receiver_community_idTocommunities")
+  collaboration_requests_collaboration_requests_sender_community_idTocommunities   collaboration_requests[] @relation("collaboration_requests_sender_community_idTocommunities")
+  categories                                                                       categories?              @relation(fields: [category_id], references: [category_id], onDelete: NoAction, onUpdate: NoAction)
+  users                                                                            users                    @relation(fields: [founder_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  community_admins                                                                 community_admins[]
+  community_locations                                                              community_locations[]
+  community_members                                                                community_members[]
+  donation_campaigns                                                               donation_campaigns[]
+  events                                                                           events[]
+  notifications                                                                    notifications[]
+  posts                                                                            posts[]
+
+  @@index([category_id], map: "idx_communities_category_id")
+  @@index([founder_id], map: "idx_communities_founder_id")
+  @@index([is_verified], map: "idx_communities_is_verified")
+}
+
+model community_admins {
+  admin_id     Int             @id @default(autoincrement())
+  community_id Int
+  user_id      Int
+  role         admin_role_enum
+  assigned_at  DateTime        @default(now()) @db.Timestamp(6)
+  communities  communities     @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users        users           @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([community_id, user_id])
+  @@index([community_id], map: "idx_community_admins_community_id")
+  @@index([user_id], map: "idx_community_admins_user_id")
+}
+
+model community_locations {
+  location_id     Int         @id @default(autoincrement())
+  community_id    Int
+  name            String      @db.VarChar(100)
+  address         String?
+  latitude        Decimal?    @db.Decimal(10, 8)
+  longitude       Decimal?    @db.Decimal(11, 8)
+  google_maps_url String?     @db.VarChar(255)
+  is_primary      Boolean     @default(false)
+  created_at      DateTime    @default(now()) @db.Timestamp(6)
+  updated_at      DateTime    @default(now()) @db.Timestamp(6)
+  communities     communities @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([community_id], map: "idx_community_locations_community_id")
+}
+
+model community_members {
+  member_id    Int                @id @default(autoincrement())
+  community_id Int
+  user_id      Int
+  join_date    DateTime           @default(now()) @db.Timestamp(6)
+  status       member_status_enum @default(pending)
+  left_date    DateTime?          @db.Timestamp(6)
+  communities  communities        @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users        users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([community_id, user_id])
+  @@index([community_id], map: "idx_community_members_community_id")
+  @@index([user_id], map: "idx_community_members_user_id")
+}
+
+model donation_campaigns {
+  campaign_id             Int                       @id @default(autoincrement())
+  community_id            Int?
+  creator_id              Int
+  title                   String                    @db.VarChar(200)
+  description             String?
+  donation_type           donation_type_enum
+  target_amount           Decimal?                  @db.Decimal(15, 2)
+  collected_amount        Decimal                   @default(0) @db.Decimal(15, 2)
+  bank_account_info       String?
+  ewallet_info            String?
+  goods_description       String?
+  volunteer_needs         String?
+  volunteer_slots         Int?
+  volunteer_registered    Int                       @default(0)
+  start_date              DateTime?                 @db.Date
+  end_date                DateTime?                 @db.Date
+  status                  campaign_status_enum      @default(active)
+  total_donors            Int                       @default(0)
+  created_at              DateTime                  @default(now()) @db.Timestamp(6)
+  updated_at              DateTime                  @default(now()) @db.Timestamp(6)
+  communities             communities?              @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users                   users                     @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  donations               donations[]
+  volunteer_registrations volunteer_registrations[]
+
+  @@index([community_id], map: "idx_donation_campaigns_community_id")
+  @@index([status], map: "idx_donation_campaigns_status")
+}
+
+model donations {
+  donation_id            Int                  @id @default(autoincrement())
+  campaign_id            Int
+  donor_id               Int?
+  donation_type          donation_type_enum
+  amount                 Decimal?             @db.Decimal(15, 2)
+  payment_method         String?              @db.VarChar(50)
+  proof_image            String?              @db.VarChar(255)
+  goods_type             String?              @db.VarChar(50)
+  goods_name             String?              @db.VarChar(100)
+  goods_quantity         Int?
+  goods_unit             String?              @db.VarChar(20)
+  goods_photo            String?              @db.VarChar(255)
+  delivery_method        String?              @db.VarChar(50)
+  delivery_address       String?
+  volunteer_availability String?              @db.VarChar(50)
+  volunteer_skill        String?              @db.VarChar(100)
+  volunteer_notes        String?
+  donor_name             String?              @db.VarChar(100)
+  donor_phone            String?              @db.VarChar(20)
+  donor_email            String?              @db.VarChar(100)
+  is_anonymous           Boolean              @default(false)
+  is_verified            Boolean              @default(false)
+  status                 donation_status_enum @default(pending)
+  confirmed_at           DateTime?            @db.Timestamp(6)
+  created_at             DateTime             @default(now()) @db.Timestamp(6)
+  donation_campaigns     donation_campaigns   @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction)
+  users                  users?               @relation(fields: [donor_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([campaign_id], map: "idx_donations_campaign_id")
+  @@index([donor_id], map: "idx_donations_donor_id")
+  @@index([status], map: "idx_donations_status")
+}
+
+model event_participants {
+  participant_id    Int                     @id @default(autoincrement())
+  event_id          Int
+  user_id           Int
+  registration_date DateTime                @default(now()) @db.Timestamp(6)
+  status            participant_status_enum @default(registered)
+  events            events                  @relation(fields: [event_id], references: [event_id], onDelete: Cascade, onUpdate: NoAction)
+  users             users                   @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([event_id, user_id])
+  @@index([event_id], map: "idx_event_participants_event_id")
+}
+
+model events {
+  event_id                Int                      @id @default(autoincrement())
+  community_id            Int
+  creator_id              Int
+  title                   String                   @db.VarChar(200)
+  description             String?
+  poster                  String?                  @db.VarChar(255)
+  event_date              DateTime                 @db.Date
+  start_time              DateTime?                @db.Time(6)
+  end_time                DateTime?                @db.Time(6)
+  location                String?                  @db.VarChar(255)
+  latitude                Decimal?                 @db.Decimal(10, 8)
+  longitude               Decimal?                 @db.Decimal(11, 8)
+  quota                   Int?
+  registered_participants Int                      @default(0)
+  status                  event_status_enum        @default(upcoming)
+  created_at              DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at              DateTime                 @default(now()) @db.Timestamp(6)
+  collaboration_requests  collaboration_requests[]
+  event_participants      event_participants[]
+  communities             communities              @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users                   users                    @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([community_id], map: "idx_events_community_id")
+  @@index([event_date], map: "idx_events_event_date")
+  @@index([status], map: "idx_events_status")
+}
+
+model goods_categories {
+  category_id   Int      @id @default(autoincrement())
+  category_name String   @unique @db.VarChar(50)
+  icon          String?  @db.VarChar(50)
+  unit_default  String?  @db.VarChar(20)
+  created_at    DateTime @default(now()) @db.Timestamp(6)
+}
+
+model notification_reads {
+  read_id         Int           @id @default(autoincrement())
+  notification_id Int
+  user_id         Int
+  is_read         Boolean       @default(false)
+  read_at         DateTime?     @db.Timestamp(6)
+  created_at      DateTime      @default(now()) @db.Timestamp(6)
+  updated_at      DateTime      @default(now()) @db.Timestamp(6)
+  notifications   notifications @relation(fields: [notification_id], references: [notification_id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([notification_id, user_id])
+  @@index([notification_id], map: "idx_notification_reads_notification_id")
+  @@index([user_id], map: "idx_notification_reads_user_id")
+}
+
+model notification_targets {
+  target_id       Int           @id @default(autoincrement())
+  notification_id Int
+  user_id         Int
+  created_at      DateTime      @default(now()) @db.Timestamp(6)
+  notifications   notifications @relation(fields: [notification_id], references: [notification_id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([notification_id, user_id])
+  @@index([notification_id], map: "idx_notification_targets_notification_id")
+}
+
+model notifications {
+  notification_id                           Int                    @id @default(autoincrement())
+  type                                      String                 @db.VarChar(50)
+  title                                     String                 @db.VarChar(200)
+  content                                   String?
+  link                                      String?                @db.VarChar(255)
+  target_community_id                       Int?
+  target_user_id                            Int?
+  target_role                               notif_target_role_enum @default(all)
+  is_global                                 Boolean                @default(false)
+  created_by                                Int?
+  created_at                                DateTime               @default(now()) @db.Timestamp(6)
+  updated_at                                DateTime               @default(now()) @db.Timestamp(6)
+  notification_reads                        notification_reads[]
+  notification_targets                      notification_targets[]
+  users_notifications_created_byTousers     users?                 @relation("notifications_created_byTousers", fields: [created_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  communities                               communities?           @relation(fields: [target_community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users_notifications_target_user_idTousers users?                 @relation("notifications_target_user_idTousers", fields: [target_user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([is_global], map: "idx_notifications_is_global")
+  @@index([target_community_id], map: "idx_notifications_target_community")
+  @@index([target_user_id], map: "idx_notifications_target_user")
+}
+
+model post_comments {
+  comment_id Int      @id @default(autoincrement())
+  post_id    Int
+  user_id    Int
+  content    String
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  posts      posts    @relation(fields: [post_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([post_id], map: "idx_post_comments_post_id")
+  @@index([user_id], map: "idx_post_comments_user_id")
+}
+
+model post_likes {
+  like_id    Int      @id @default(autoincrement())
+  post_id    Int
+  user_id    Int
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  posts      posts    @relation(fields: [post_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([post_id, user_id])
+  @@index([post_id], map: "idx_post_likes_post_id")
+}
+
+model post_media {
+  media_id   Int             @id @default(autoincrement())
+  post_id    Int
+  media_type media_type_enum
+  media_url  String          @db.VarChar(255)
+  caption    String?         @db.VarChar(200)
+  is_cover   Boolean         @default(false)
+  sort_order Int             @default(0)
+  created_at DateTime        @default(now()) @db.Timestamp(6)
+  posts      posts           @relation(fields: [post_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([post_id], map: "idx_post_media_post_id")
+}
+
+model posts {
+  post_id        Int              @id @default(autoincrement())
+  community_id   Int
+  author_id      Int
+  title          String           @db.VarChar(200)
+  content        String?
+  post_type      post_type_enum   @default(activity)
+  is_pinned      Boolean          @default(false)
+  total_likes    Int              @default(0)
+  total_comments Int              @default(0)
+  status         post_status_enum @default(active)
+  created_at     DateTime         @default(now()) @db.Timestamp(6)
+  updated_at     DateTime         @default(now()) @db.Timestamp(6)
+  post_comments  post_comments[]
+  post_likes     post_likes[]
+  post_media     post_media[]
+  users          users            @relation(fields: [author_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  communities    communities      @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([author_id], map: "idx_posts_author_id")
+  @@index([community_id], map: "idx_posts_community_id")
+  @@index([status], map: "idx_posts_status")
+}
+
+model reports {
+  report_id                         Int                @id @default(autoincrement())
+  reporter_id                       Int
+  target_type                       report_target_enum
+  target_id                         Int
+  reason                            String
+  status                            report_status_enum @default(pending)
+  processed_by                      Int?
+  processed_at                      DateTime?          @db.Timestamp(6)
+  created_at                        DateTime           @default(now()) @db.Timestamp(6)
+  users_reports_processed_byTousers users?             @relation("reports_processed_byTousers", fields: [processed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  users_reports_reporter_idTousers  users              @relation("reports_reporter_idTousers", fields: [reporter_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status], map: "idx_reports_status")
+  @@index([target_type, target_id], map: "idx_reports_target")
+}
+
+model user_roles {
+  role_id          Int      @id @default(autoincrement())
+  role_name        String   @unique @db.VarChar(30)
+  role_description String?
+  created_at       DateTime @default(now()) @db.Timestamp(6)
+  users            users[]
+}
+
+model users {
+  user_id                                           Int                       @id @default(autoincrement())
+  email                                             String                    @unique @db.VarChar(100)
+  password_hash                                     String?                   @db.VarChar(255)
+  full_name                                         String                    @db.VarChar(100)
+  phone_number                                      String?                   @db.VarChar(20)
+  profile_picture                                   String?                   @db.VarChar(255)
+  bio                                               String?
+  kecamatan                                         String?                   @db.VarChar(50)
+  interests                                         String?
+  role_id                                           Int
+  is_verified                                       Boolean                   @default(false)
+  is_active                                         Boolean                   @default(true)
+  last_login                                        DateTime?                 @db.Timestamp(6)
+  created_at                                        DateTime                  @default(now()) @db.Timestamp(6)
+  updated_at                                        DateTime                  @default(now()) @db.Timestamp(6)
+  communities                                       communities[]
+  community_admins                                  community_admins[]
+  community_members                                 community_members[]
+  donation_campaigns                                donation_campaigns[]
+  donations                                         donations[]
+  event_participants                                event_participants[]
+  events                                            events[]
+  notification_reads                                notification_reads[]
+  notification_targets                              notification_targets[]
+  notifications_notifications_created_byTousers     notifications[]           @relation("notifications_created_byTousers")
+  notifications_notifications_target_user_idTousers notifications[]           @relation("notifications_target_user_idTousers")
+  post_comments                                     post_comments[]
+  post_likes                                        post_likes[]
+  posts                                             posts[]
+  reports_reports_processed_byTousers               reports[]                 @relation("reports_processed_byTousers")
+  reports_reports_reporter_idTousers                reports[]                 @relation("reports_reporter_idTousers")
+  user_roles                                        user_roles                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+  volunteer_registrations                           volunteer_registrations[]
+
+  @@index([kecamatan], map: "idx_users_kecamatan")
+  @@index([role_id], map: "idx_users_role_id")
+}
+
+model volunteer_registrations {
+  registration_id    Int                   @id @default(autoincrement())
+  campaign_id        Int
+  user_id            Int
+  availability       String?               @db.VarChar(50)
+  skills             String?
+  experience         String?
+  notes              String?
+  status             volunteer_status_enum @default(pending)
+  assigned_task      String?
+  confirmed_at       DateTime?             @db.Timestamp(6)
+  completed_at       DateTime?             @db.Timestamp(6)
+  created_at         DateTime              @default(now()) @db.Timestamp(6)
+  donation_campaigns donation_campaigns    @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction)
+  users              users                 @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([campaign_id, user_id])
+  @@index([campaign_id], map: "idx_volunteer_registrations_campaign_id")
+}
+
+enum admin_role_enum {
+  admin
+  founder
+}
+
+enum campaign_status_enum {
+  active
+  completed
+  cancelled
+}
+
+enum collab_status_enum {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+enum donation_status_enum {
+  pending
+  confirmed
+  rejected
+  delivered
+}
+
+enum donation_type_enum {
+  money
+  goods
+  volunteer
+}
+
+enum event_status_enum {
+  upcoming
+  ongoing
+  completed
+  cancelled
+}
+
+enum media_type_enum {
+  image
+  video
+}
+
+enum member_status_enum {
+  pending
+  active
+  inactive
+  rejected
+}
+
+enum notif_target_role_enum {
+  all
+  admin
+  member
+}
+
+enum participant_status_enum {
+  registered
+  attended
+  absent
+  cancelled
+}
+
+enum post_status_enum {
+  active
+  reported
+  hidden
+}
+
+enum post_type_enum {
+  activity
+  announcement
+  achievement
+}
+
+enum report_status_enum {
+  pending
+  processed
+  rejected
+}
+
+enum report_target_enum {
+  post
+  comment
+  community
+  user
+  event
+}
+
+enum volunteer_status_enum {
+  pending
+  confirmed
+  declined
+  completed
 }
