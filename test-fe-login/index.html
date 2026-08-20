@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Google Login Test</title>
+</head>
+
+<body>
+
+    <h1>Test Google Login</h1>
+
+    <div id="googleButton"></div>
+
+    <pre id="result"></pre>
+
+    <script src="https://accounts.google.com/gsi/client" async></script>
+
+    <script>
+
+        function handleCredentialResponse(response) {
+
+            console.log("Google Credential:", response.credential);
+
+            fetch("http://localhost:3000/auth/google", {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    credential: response.credential
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+
+                console.log(data);
+
+                document.getElementById("result").textContent =
+                    JSON.stringify(data, null, 2);
+
+            })
+            .catch(error => {
+
+                console.error(error);
+
+                document.getElementById("result").textContent =
+                    error.toString();
+
+            });
+        }
+
+        window.onload = function () {
+
+            google.accounts.id.initialize({
+                client_id: "1040742393190-iqja9lb7fcb1p09pfh0iop1n93etpcnm.apps.googleusercontent.com",
+                callback: handleCredentialResponse
+            });
+
+            google.accounts.id.renderButton(
+                document.getElementById("googleButton"),
+                {
+                    theme: "outline",
+                    size: "large"
+                }
+            );
+
+        };
+
+    </script>
+
+</body>
+</html>

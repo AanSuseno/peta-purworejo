@@ -1,9 +1,19 @@
 import express from "express";
 import prisma from "./lib/prisma.js";
+import cors from "cors";
+import "dotenv/config";
+import authRoutes from "./routes/auth.routes.js";
+
+process.env.TZ = 'Asia/Jakarta';
 
 const app = express();
 
 const PORT = 3000;
+
+app.use(cors());
+app.use(express.json());
+
+app.use("/auth", authRoutes);
 
 app.get("/", (req, res) => {
     res.json({

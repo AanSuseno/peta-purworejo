@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../lib/generated/prisma"
 }
 
 datasource db {
@@ -384,6 +384,7 @@ model users {
   last_login                                        DateTime?                 @db.Timestamp(6)
   created_at                                        DateTime                  @default(now()) @db.Timestamp(6)
   updated_at                                        DateTime                  @default(now()) @db.Timestamp(6)
+  google_id                                         String?                   @unique(map: "users_google_id_unique") @db.VarChar(255)
   communities                                       communities[]
   community_admins                                  community_admins[]
   community_members                                 community_members[]
