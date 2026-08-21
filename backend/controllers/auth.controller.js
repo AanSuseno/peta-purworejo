@@ -1,3 +1,4 @@
+// controllers/auth.controller.js
 import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
@@ -68,6 +69,15 @@ export const googleLogin = async (req, res) => {
             });
 
             if (existingUser) {
+                // 🔥 CEK: Apakah user yang sudah ada masih aktif?
+                if (!existingUser.is_active) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Akun Anda telah dinonaktifkan. Silakan hubungi administrator untuk mengaktifkan kembali.",
+                        error: "ACCOUNT_DEACTIVATED"
+                    });
+                }
+
                 // Update user yang ada
                 user = await prisma.users.update({
                     where: {
@@ -85,7 +95,7 @@ export const googleLogin = async (req, res) => {
                     }
                 });
             } else {
-                // Cari role default (role_id = 1)
+                // User baru - langsung aktif
                 const defaultRoleId = 1;
                 
                 const defaultRole = await prisma.user_roles.findUnique({
@@ -113,7 +123,7 @@ export const googleLogin = async (req, res) => {
                         full_name: name || email.split('@')[0],
                         profile_picture: picture || null,
                         is_verified: true,
-                        is_active: true,
+                        is_active: true,  // ✅ User baru selalu aktif
                         role_id: roleIdToUse,
                         created_at: new Date(),
                         updated_at: new Date(),
@@ -125,6 +135,15 @@ export const googleLogin = async (req, res) => {
                 });
             }
         } else {
+            // 🔥 CEK: User ditemukan, tapi apakah masih aktif?
+            if (!user.is_active) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Akun Anda telah dinonaktifkan. Silakan hubungi administrator untuk mengaktifkan kembali.",
+                    error: "ACCOUNT_DEACTIVATED"
+                });
+            }
+
             // Update data user
             user = await prisma.users.update({
                 where: {
