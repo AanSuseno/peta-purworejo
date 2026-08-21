@@ -12,13 +12,27 @@ if (!fs.existsSync(uploadDir)) {
 // Konfigurasi storage
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, uploadDir);
+        // Tentukan folder berdasarkan tipe file
+        let folder = uploadDir;
+        if (file.fieldname === 'logo' || file.fieldname === 'banner') {
+            folder = path.join(uploadDir, 'communities');
+        } else if (file.fieldname === 'profile_picture') {
+            folder = path.join(uploadDir, 'profiles');
+        }
+        
+        // Buat folder jika belum ada
+        if (!fs.existsSync(folder)) {
+            fs.mkdirSync(folder, { recursive: true });
+        }
+        
+        cb(null, folder);
     },
     filename: (req, file, cb) => {
-        // Generate unique filename: timestamp-random.extension
         const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
         const ext = path.extname(file.originalname);
-        cb(null, `profile-${uniqueSuffix}${ext}`);
+        const prefix = file.fieldname === 'logo' ? 'logo' : 
+                       file.fieldname === 'banner' ? 'banner' : 'profile';
+        cb(null, `${prefix}-${uniqueSuffix}${ext}`);
     }
 });
 
@@ -35,8 +49,8 @@ const fileFilter = (req, file, cb) => {
     }
 };
 
-// Upload middleware dengan limit
-export const upload = multer({
+// Upload middleware
+const upload = multer({
     storage: storage,
     limits: {
         fileSize: 5 * 1024 * 1024 // 5MB
@@ -44,5 +58,17 @@ export const upload = multer({
     fileFilter: fileFilter
 });
 
-// Middleware untuk single file upload
+// Middleware untuk upload logo (single file)
+export const uploadCommunityLogo = upload.single("logo");
+
+// Middleware untuk upload banner (single file)
+export const uploadCommunityBanner = upload.single("banner");
+
+// Middleware untuk upload profile picture
 export const uploadProfilePicture = upload.single("profile_picture");
+
+// Middleware untuk upload multiple (logo + banner sekaligus)
+export const uploadCommunityMedia = upload.fields([
+    { name: 'logo', maxCount: 1 },
+    { name: 'banner', maxCount: 1 }
+]);
