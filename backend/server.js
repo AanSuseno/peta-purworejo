@@ -5,6 +5,7 @@ import "dotenv/config";
 import authRoutes from "./routes/auth.routes.js";
 import categoriesRoutes from "./routes/categories.routes.js";
 import usersRoutes from "./routes/users.routes.js";
+import communities from "./routes/communities.routes.js";
 import path from "path";
 
 process.env.TZ = 'Asia/Jakarta';
@@ -20,6 +21,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/categories", categoriesRoutes);
 app.use("/users", usersRoutes);
+app.use("/communities", communities);
 
 app.get("/", (req, res) => {
     res.json({
