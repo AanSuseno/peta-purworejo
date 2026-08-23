@@ -1,8 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import 'auth_service.dart';
-import 'secure_storage_service.dart';
+import '../services/auth_service.dart';
+import '../services/secure_storage_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -34,29 +37,50 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    try {
-      final token = await _storage.readToken();
+    final token = await _storage.readToken();
 
-      if (token != null) {
-        // Validasi token ke server, jangan asumsikan token masih valid
-        final profile = await _authService.fetchProfile(token);
-        _userData = profile;
-        _isLoggedIn = true;
-      } else {
-        _isLoggedIn = false;
-        _userData = null;
-      }
-    } catch (e) {
-      // Token invalid/expired di server -> anggap logout
-      debugPrint('Error checking login status: $e');
+    if (token == null) {
+      _isLoggedIn = false;
+      _userData = null;
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    // Ada token tersimpan -> anggap dulu masih login supaya user langsung
+    // masuk ke Home (tidak perlu login ulang tiap buka app), sambil
+    // divalidasi ke server di belakang layar.
+    _isLoggedIn = true;
+    // Muat data user yang tersimpan lokal supaya nama/email/foto langsung
+    // muncul, tidak perlu menunggu request ke server selesai.
+    _userData = await _storage.readUserData();
+    _isLoading = false;
+    notifyListeners();
+
+    try {
+      final profile = await _authService.fetchProfile(token);
+      _userData = profile;
+      await _storage.saveUserData(profile);
+      _isLoggedIn = true;
+      notifyListeners();
+    } on AuthException catch (e) {
+      // Server benar-benar menolak token (401/403) -> sesi memang habis
+      debugPrint('Token ditolak server, logout: $e');
       await _storage.deleteToken();
+      await _storage.deleteUserData();
       _isLoggedIn = false;
       _userAccount = null;
       _userData = null;
+      notifyListeners();
+    } on SocketException catch (e) {
+      // Tidak bisa connect ke server -> JANGAN logout paksa
+      debugPrint('Network error saat validasi token, tetap login: $e');
+    } on TimeoutException catch (e) {
+      debugPrint('Timeout saat validasi token, tetap login: $e');
+    } catch (e) {
+      // Error tak terduga lain -> jangan langsung logout, cukup log
+      debugPrint('Error tak terduga saat validasi token: $e');
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   Future<void> login() async {
@@ -89,12 +113,16 @@ class AuthProvider extends ChangeNotifier {
       await _storage.saveToken(result['token'] as String);
 
       _userData = result['user'] as Map<String, dynamic>;
+      await _storage.saveUserData(_userData!);
       _isLoggedIn = true;
+
+      debugPrint('Profile from login: $_userData');
 
       notifyListeners();
     } catch (e) {
       debugPrint('Login error: $e');
       await _storage.deleteToken();
+      await _storage.deleteUserData();
       _isLoggedIn = false;
       _userAccount = null;
       _userData = null;
@@ -112,6 +140,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _googleSignIn.signOut();
       await _storage.deleteToken();
+      await _storage.deleteUserData();
       _isLoggedIn = false;
       _userAccount = null;
       _userData = null;

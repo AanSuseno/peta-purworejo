@@ -1,6 +1,6 @@
 import express from "express";
 import { googleLogin } from "../controllers/auth.controller.js";
-import {mobileGoogleLogin} from "../controllers/auth.mobile.controller.js";
+import {mobileGoogleLogin, getMe} from "../controllers/auth.mobile.controller.js";
 
 const router = express.Router();
 
@@ -14,6 +14,7 @@ router.use((req, res, next) => {
 // Route Google Login
 router.post("/google", googleLogin);
 router.post("/mobile", mobileGoogleLogin);
+router.get("/me", getMe);
 
 // Route test untuk cek status
 router.get("/test", (req, res) => {

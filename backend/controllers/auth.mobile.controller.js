@@ -80,19 +80,6 @@ export const mobileGoogleLogin = async (req, res) => {
             error: "ACCOUNT_DEACTIVATED",
           });
         }
-
-        user = await prisma.users.update({
-          where: { email },
-          data: {
-            google_id: googleId,
-            full_name: name || existingUser.full_name,
-            profile_picture: picture || existingUser.profile_picture,
-            updated_at: new Date(),
-            last_login: new Date(),
-          },
-          include: { user_roles: true },
-        });
-        console.log(`✅ Existing mobile user updated: ${email}`);
       } else {
         const defaultRoleId = 1;
 
@@ -137,18 +124,6 @@ export const mobileGoogleLogin = async (req, res) => {
           error: "ACCOUNT_DEACTIVATED",
         });
       }
-
-      user = await prisma.users.update({
-        where: { user_id: user.user_id },
-        data: {
-          full_name: name || user.full_name,
-          profile_picture: picture || user.profile_picture,
-          last_login: new Date(),
-          updated_at: new Date(),
-        },
-        include: { user_roles: true },
-      });
-      console.log(`✅ Mobile user updated: ${email}`);
     }
 
     const token = jwt.sign(

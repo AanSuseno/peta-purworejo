@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'auth_provider.dart';
-import 'login_screen.dart';
-import 'home_screen.dart';
+import 'provider/auth_provider.dart';
+import 'screen/login_screen.dart';
+import 'screen/main_navigation_screen.dart';
+import 'screen/splash_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -22,15 +23,13 @@ class MyApp extends StatelessWidget {
         home: Consumer<AuthProvider>(
           builder: (context, auth, child) {
             if (auth.isLoading) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
+              return const SplashScreen();
             }
 
-            if (auth.isLoggedIn) {
-              return const HomeScreen();
+            var statusLogin = auth.isLoggedIn;
+            if (statusLogin) {
+              return const MainNavigationScreen();
             }
-
             return const LoginScreen();
           },
         ),
