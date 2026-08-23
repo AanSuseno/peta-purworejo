@@ -49,6 +49,43 @@ const fileFilter = (req, file, cb) => {
     }
 };
 
+const postStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const folder = path.join(uploadDir, 'posts');
+        if (!fs.existsSync(folder)) {
+            fs.mkdirSync(folder, { recursive: true });
+        }
+        cb(null, folder);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, `post-${uniqueSuffix}${ext}`);
+    }
+});
+
+// Filter untuk post media (gambar & video)
+const postFileFilter = (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp|mp4|mov|avi/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+        return cb(null, true);
+    } else {
+        cb(new Error("Hanya file gambar (jpeg, jpg, png, gif, webp) dan video (mp4, mov, avi) yang diizinkan"));
+    }
+};
+
+// Upload middleware untuk post media (multiple files)
+const uploadPostMedia = multer({
+    storage: postStorage,
+    limits: {
+        fileSize: 20 * 1024 * 1024 // 20MB untuk video
+    },
+    fileFilter: postFileFilter
+});
+
 // Upload middleware
 const upload = multer({
     storage: storage,
@@ -72,3 +109,6 @@ export const uploadCommunityMedia = upload.fields([
     { name: 'logo', maxCount: 1 },
     { name: 'banner', maxCount: 1 }
 ]);
+
+export const uploadPostImages = uploadPostMedia.array("media", 10); // Max 10 files
+export const uploadSinglePostImage = uploadPostMedia.single("media");

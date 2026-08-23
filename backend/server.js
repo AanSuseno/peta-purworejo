@@ -11,6 +11,7 @@ import authRoutes from "./routes/auth.routes.js";
 import categoriesRoutes from "./routes/categories.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import communitiesRoutes from "./routes/communities.routes.js";
+import postsRoutes from "./routes/posts.routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +51,11 @@ app.use("/auth", authRoutes);
 app.use("/categories", categoriesRoutes);
 app.use("/users", usersRoutes);
 app.use("/communities", communitiesRoutes);
+app.use("/posts", postsRoutes);
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
+});
 
 app.get("/test-upload", (req, res) => {
     const files = {};
