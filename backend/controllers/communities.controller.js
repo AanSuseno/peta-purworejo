@@ -73,9 +73,6 @@ export const getAllCommunities = async (req, res) => {
                             },
                             posts: {
                                 where: { status: 'active' }
-                            },
-                            events: {
-                                where: { status: { not: 'cancelled' } }
                             }
                         }
                     }
@@ -107,7 +104,6 @@ export const getAllCommunities = async (req, res) => {
             ...community,
             member_count: community._count.community_members,
             post_count: community._count.posts,
-            event_count: community._count.events,
             _count: undefined,
             is_member: joinedIds.has(community.community_id),
             is_founder: community.founder_id === userId
@@ -198,9 +194,6 @@ export const getCommunityById = async (req, res) => {
                         posts: {
                             where: { status: 'active' }
                         },
-                        events: {
-                            where: { status: { not: 'cancelled' } }
-                        }
                     }
                 }
             }
@@ -233,7 +226,6 @@ export const getCommunityById = async (req, res) => {
             ...community,
             member_count: community._count.community_members,
             post_count: community._count.posts,
-            event_count: community._count.events,
             _count: undefined,
             user_access: {
                 is_member: !!isMember,
@@ -324,9 +316,6 @@ export const getCommunityBySlug = async (req, res) => {
                         posts: {
                             where: { status: 'active' }
                         },
-                        events: {
-                            where: { status: { not: 'cancelled' } }
-                        }
                     }
                 }
             }
@@ -358,7 +347,6 @@ export const getCommunityBySlug = async (req, res) => {
             ...community,
             member_count: community._count.community_members,
             post_count: community._count.posts,
-            event_count: community._count.events,
             _count: undefined,
             user_access: {
                 is_member: !!isMember,
@@ -763,8 +751,7 @@ export const deleteCommunity = async (req, res) => {
                 _count: {
                     select: {
                         community_members: true,
-                        posts: true,
-                        events: true
+                        posts: true
                     }
                 }
             }
@@ -792,8 +779,7 @@ export const deleteCommunity = async (req, res) => {
                 community_id: community.community_id,
                 community_name: community.community_name,
                 members_count: community._count.community_members,
-                posts_count: community._count.posts,
-                events_count: community._count.events
+                posts_count: community._count.posts
             }
         });
 

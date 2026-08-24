@@ -10,6 +10,7 @@ export const getCommunityPosts = async (req, res) => {
             page = 1, 
             limit = 10, 
             post_type,
+            visibility,
             sort_by = 'created_at',
             sort_order = 'desc'
         } = req.query;
@@ -39,9 +40,13 @@ export const getCommunityPosts = async (req, res) => {
             where.post_type = post_type;
         }
 
+        if (visibility) {
+            where.visibility = visibility;
+        }
+
         // Build sorting
         let orderBy = {};
-        if (sort_by === 'created_at' || sort_by === 'total_likes' || sort_by === 'total_comments') {
+        if (['created_at', 'total_likes', 'total_comments', 'event_date'].includes(sort_by)) {
             orderBy[sort_by] = sort_order;
         } else {
             orderBy = { created_at: 'desc' };
@@ -58,6 +63,14 @@ export const getCommunityPosts = async (req, res) => {
                             profile_picture: true
                         }
                     },
+                    communities: {
+                        select: {
+                            community_id: true,
+                            community_name: true,
+                            community_slug: true,
+                            logo: true
+                        }
+                    },
                     post_media: {
                         orderBy: {
                             sort_order: 'asc'
@@ -66,7 +79,8 @@ export const getCommunityPosts = async (req, res) => {
                     _count: {
                         select: {
                             post_likes: true,
-                            post_comments: true
+                            post_comments: true,
+                            event_participants: true
                         }
                     }
                 },
@@ -82,6 +96,8 @@ export const getCommunityPosts = async (req, res) => {
             ...post,
             likes_count: post._count.post_likes,
             comments_count: post._count.post_comments,
+            participants_count: post._count.event_participants,
+            is_event: post.post_type === 'event',
             _count: undefined
         }));
 
@@ -109,7 +125,7 @@ export const getCommunityPosts = async (req, res) => {
 export const getFeedPosts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { page = 1, limit = 10 } = req.query;
+        const { page = 1, limit = 10, post_type } = req.query;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const take = parseInt(limit);
@@ -141,12 +157,19 @@ export const getFeedPosts = async (req, res) => {
             });
         }
 
+        const where = {
+            community_id: { in: communityIds },
+            status: 'active',
+            visibility: 'public'
+        };
+
+        if (post_type) {
+            where.post_type = post_type;
+        }
+
         const [posts, total] = await Promise.all([
             prisma.posts.findMany({
-                where: {
-                    community_id: { in: communityIds },
-                    status: 'active'
-                },
+                where,
                 include: {
                     users: {
                         select: {
@@ -171,7 +194,8 @@ export const getFeedPosts = async (req, res) => {
                     _count: {
                         select: {
                             post_likes: true,
-                            post_comments: true
+                            post_comments: true,
+                            event_participants: true
                         }
                     }
                 },
@@ -181,18 +205,15 @@ export const getFeedPosts = async (req, res) => {
                 skip,
                 take
             }),
-            prisma.posts.count({
-                where: {
-                    community_id: { in: communityIds },
-                    status: 'active'
-                }
-            })
+            prisma.posts.count({ where })
         ]);
 
         const formattedPosts = posts.map(post => ({
             ...post,
             likes_count: post._count.post_likes,
             comments_count: post._count.post_comments,
+            participants_count: post._count.event_participants,
+            is_event: post.post_type === 'event',
             _count: undefined
         }));
 
@@ -271,10 +292,20 @@ export const getPostById = async (req, res) => {
                     },
                     take: 5
                 },
+                event_participants: {
+                    where: {
+                        user_id: userId
+                    },
+                    select: {
+                        participant_id: true,
+                        status: true
+                    }
+                },
                 _count: {
                     select: {
                         post_likes: true,
-                        post_comments: true
+                        post_comments: true,
+                        event_participants: true
                     }
                 }
             }
@@ -289,14 +320,21 @@ export const getPostById = async (req, res) => {
 
         // Cek apakah user sudah like
         const isLiked = post.post_likes.length > 0;
+        const isParticipant = post.event_participants.length > 0;
+        const participantStatus = isParticipant ? post.event_participants[0].status : null;
 
         const formattedPost = {
             ...post,
             likes_count: post._count.post_likes,
             comments_count: post._count.post_comments,
+            participants_count: post._count.event_participants,
             is_liked: isLiked,
+            is_participant: isParticipant,
+            participant_status: participantStatus,
+            is_event: post.post_type === 'event',
             _count: undefined,
-            post_likes: undefined
+            post_likes: undefined,
+            event_participants: undefined
         };
 
         return res.json({
@@ -318,7 +356,21 @@ export const createPost = async (req, res) => {
     try {
         const { id } = req.params; // community_id
         const userId = req.user.id;
-        const { title, content, post_type = 'activity' } = req.body;
+        const { 
+            title, 
+            content, 
+            post_type = 'regular',
+            visibility = 'public',
+            // Event fields (optional)
+            event_date,
+            event_start_time,
+            event_end_time,
+            event_location,
+            event_latitude,
+            event_longitude,
+            event_quota,
+            event_registration_link
+        } = req.body;
 
         // Validasi
         if (!title || title.trim() === '') {
@@ -363,21 +415,47 @@ export const createPost = async (req, res) => {
             });
         }
 
+        // Validasi event fields jika post_type = event
+        if (post_type === 'event' && !event_date) {
+            return res.status(400).json({
+                success: false,
+                message: "Tanggal event wajib diisi untuk postingan event"
+            });
+        }
+
+        // Buat data post
+        const postData = {
+            community_id: parseInt(id),
+            author_id: userId,
+            title: title.trim(),
+            content: content || null,
+            post_type: post_type,
+            visibility: visibility,
+            is_pinned: false,
+            total_likes: 0,
+            total_comments: 0,
+            status: 'active',
+            created_at: new Date(),
+            updated_at: new Date()
+        };
+
+        // Tambahkan field event jika post_type = event
+        if (post_type === 'event') {
+            postData.event_date = event_date ? new Date(event_date) : null;
+            postData.event_start_time = event_start_time || null;
+            postData.event_end_time = event_end_time || null;
+            postData.event_location = event_location || null;
+            postData.event_latitude = event_latitude ? parseFloat(event_latitude) : null;
+            postData.event_longitude = event_longitude ? parseFloat(event_longitude) : null;
+            postData.event_quota = event_quota ? parseInt(event_quota) : null;
+            postData.event_registration_link = event_registration_link || null;
+            postData.event_registered_count = 0;
+            postData.event_status = 'upcoming';
+        }
+
         // Buat post
         const post = await prisma.posts.create({
-            data: {
-                community_id: parseInt(id),
-                author_id: userId,
-                title: title.trim(),
-                content: content || null,
-                post_type: post_type,
-                is_pinned: false,
-                total_likes: 0,
-                total_comments: 0,
-                status: 'active',
-                created_at: new Date(),
-                updated_at: new Date()
-            },
+            data: postData,
             include: {
                 users: {
                     select: {
@@ -392,14 +470,30 @@ export const createPost = async (req, res) => {
                         community_name: true,
                         community_slug: true
                     }
+                },
+                _count: {
+                    select: {
+                        post_likes: true,
+                        post_comments: true,
+                        event_participants: true
+                    }
                 }
             }
         });
 
+        const formattedPost = {
+            ...post,
+            likes_count: post._count.post_likes,
+            comments_count: post._count.post_comments,
+            participants_count: post._count.event_participants,
+            is_event: post.post_type === 'event',
+            _count: undefined
+        };
+
         return res.status(201).json({
             success: true,
             message: "Postingan berhasil dibuat",
-            data: post
+            data: formattedPost
         });
 
     } catch (error) {
@@ -416,7 +510,22 @@ export const createPostWithMedia = async (req, res) => {
     try {
         const { id } = req.params; // community_id
         const userId = req.user.id;
-        const { title, content, post_type = 'activity', is_pinned = false } = req.body;
+        const { 
+            title, 
+            content, 
+            post_type = 'regular',
+            visibility = 'public',
+            is_pinned = false,
+            // Event fields
+            event_date,
+            event_start_time,
+            event_end_time,
+            event_location,
+            event_latitude,
+            event_longitude,
+            event_quota,
+            event_registration_link
+        } = req.body;
 
         // Validasi
         if (!title || title.trim() === '') {
@@ -461,21 +570,47 @@ export const createPostWithMedia = async (req, res) => {
             });
         }
 
+        // Validasi event fields
+        if (post_type === 'event' && !event_date) {
+            return res.status(400).json({
+                success: false,
+                message: "Tanggal event wajib diisi untuk postingan event"
+            });
+        }
+
+        // Buat data post
+        const postData = {
+            community_id: parseInt(id),
+            author_id: userId,
+            title: title.trim(),
+            content: content || null,
+            post_type: post_type,
+            visibility: visibility,
+            is_pinned: is_pinned === 'true' || is_pinned === true,
+            total_likes: 0,
+            total_comments: 0,
+            status: 'active',
+            created_at: new Date(),
+            updated_at: new Date()
+        };
+
+        // Tambahkan field event jika post_type = event
+        if (post_type === 'event') {
+            postData.event_date = event_date ? new Date(event_date) : null;
+            postData.event_start_time = event_start_time || null;
+            postData.event_end_time = event_end_time || null;
+            postData.event_location = event_location || null;
+            postData.event_latitude = event_latitude ? parseFloat(event_latitude) : null;
+            postData.event_longitude = event_longitude ? parseFloat(event_longitude) : null;
+            postData.event_quota = event_quota ? parseInt(event_quota) : null;
+            postData.event_registration_link = event_registration_link || null;
+            postData.event_registered_count = 0;
+            postData.event_status = 'upcoming';
+        }
+
         // Buat post
         const post = await prisma.posts.create({
-            data: {
-                community_id: parseInt(id),
-                author_id: userId,
-                title: title.trim(),
-                content: content || null,
-                post_type: post_type,
-                is_pinned: is_pinned === 'true' || is_pinned === true,
-                total_likes: 0,
-                total_comments: 0,
-                status: 'active',
-                created_at: new Date(),
-                updated_at: new Date()
-            }
+            data: postData
         });
 
         // Proses media jika ada
@@ -526,21 +661,26 @@ export const createPostWithMedia = async (req, res) => {
                 _count: {
                     select: {
                         post_likes: true,
-                        post_comments: true
+                        post_comments: true,
+                        event_participants: true
                     }
                 }
             }
         });
 
+        const formattedPost = {
+            ...createdPost,
+            likes_count: createdPost._count.post_likes,
+            comments_count: createdPost._count.post_comments,
+            participants_count: createdPost._count.event_participants,
+            is_event: createdPost.post_type === 'event',
+            _count: undefined
+        };
+
         return res.status(201).json({
             success: true,
             message: "Postingan berhasil dibuat",
-            data: {
-                ...createdPost,
-                likes_count: createdPost._count.post_likes,
-                comments_count: createdPost._count.post_comments,
-                _count: undefined
-            },
+            data: formattedPost,
             media: mediaData
         });
 
@@ -558,7 +698,23 @@ export const updatePost = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { title, content, post_type, is_pinned } = req.body;
+        const { 
+            title, 
+            content, 
+            post_type, 
+            visibility,
+            is_pinned,
+            // Event fields
+            event_date,
+            event_start_time,
+            event_end_time,
+            event_location,
+            event_latitude,
+            event_longitude,
+            event_quota,
+            event_registration_link,
+            event_status
+        } = req.body;
 
         const post = await prisma.posts.findUnique({
             where: { post_id: parseInt(id) },
@@ -601,12 +757,44 @@ export const updatePost = async (req, res) => {
             title: title ? title.trim() : undefined,
             content: content !== undefined ? content : undefined,
             post_type: post_type || undefined,
+            visibility: visibility || undefined,
             updated_at: new Date()
         };
 
         // Hanya admin/author yang bisa pin post
         if (is_pinned !== undefined && (isCommunityAdmin || isSystemAdmin)) {
             updateData.is_pinned = is_pinned;
+        }
+
+        // Update event fields jika post_type = event
+        if (post_type === 'event' || post.post_type === 'event') {
+            if (event_date !== undefined) {
+                updateData.event_date = event_date ? new Date(event_date) : null;
+            }
+            if (event_start_time !== undefined) {
+                updateData.event_start_time = event_start_time || null;
+            }
+            if (event_end_time !== undefined) {
+                updateData.event_end_time = event_end_time || null;
+            }
+            if (event_location !== undefined) {
+                updateData.event_location = event_location || null;
+            }
+            if (event_latitude !== undefined) {
+                updateData.event_latitude = event_latitude ? parseFloat(event_latitude) : null;
+            }
+            if (event_longitude !== undefined) {
+                updateData.event_longitude = event_longitude ? parseFloat(event_longitude) : null;
+            }
+            if (event_quota !== undefined) {
+                updateData.event_quota = event_quota ? parseInt(event_quota) : null;
+            }
+            if (event_registration_link !== undefined) {
+                updateData.event_registration_link = event_registration_link || null;
+            }
+            if (event_status !== undefined) {
+                updateData.event_status = event_status;
+            }
         }
 
         const updatedPost = await prisma.posts.update({
@@ -637,21 +825,26 @@ export const updatePost = async (req, res) => {
                 _count: {
                     select: {
                         post_likes: true,
-                        post_comments: true
+                        post_comments: true,
+                        event_participants: true
                     }
                 }
             }
         });
 
+        const formattedPost = {
+            ...updatedPost,
+            likes_count: updatedPost._count.post_likes,
+            comments_count: updatedPost._count.post_comments,
+            participants_count: updatedPost._count.event_participants,
+            is_event: updatedPost.post_type === 'event',
+            _count: undefined
+        };
+
         return res.json({
             success: true,
             message: "Postingan berhasil diperbarui",
-            data: {
-                ...updatedPost,
-                likes_count: updatedPost._count.post_likes,
-                comments_count: updatedPost._count.post_comments,
-                _count: undefined
-            }
+            data: formattedPost
         });
 
     } catch (error) {
@@ -832,6 +1025,354 @@ export const toggleLikePost = async (req, res) => {
         });
     }
 };
+
+// ============================================
+// EVENT PARTICIPANTS
+// ============================================
+
+export const registerForEvent = async (req, res) => {
+    try {
+        const { id } = req.params; // post_id
+        const userId = req.user.id;
+
+        const post = await prisma.posts.findUnique({
+            where: { 
+                post_id: parseInt(id),
+                post_type: 'event'
+            }
+        });
+
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                message: "Event tidak ditemukan"
+            });
+        }
+
+        // Cek apakah event masih aktif
+        if (post.event_status === 'completed' || post.event_status === 'cancelled') {
+            return res.status(400).json({
+                success: false,
+                message: `Event sudah ${post.event_status}`
+            });
+        }
+
+        // Cek quota
+        if (post.event_quota && post.event_registered_count >= post.event_quota) {
+            return res.status(400).json({
+                success: false,
+                message: "Kuota event sudah penuh"
+            });
+        }
+
+        // Cek apakah sudah terdaftar
+        const existingRegistration = await prisma.event_participants.findFirst({
+            where: {
+                post_id: parseInt(id),
+                user_id: userId
+            }
+        });
+
+        if (existingRegistration) {
+            return res.status(400).json({
+                success: false,
+                message: "Anda sudah terdaftar untuk event ini"
+            });
+        }
+
+        // Cek apakah user adalah member komunitas
+        const membership = await prisma.community_members.findFirst({
+            where: {
+                community_id: post.community_id,
+                user_id: userId,
+                status: 'active'
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({
+                success: false,
+                message: "Anda harus menjadi anggota komunitas untuk mendaftar event"
+            });
+        }
+
+        // Daftar event
+        const registration = await prisma.event_participants.create({
+            data: {
+                post_id: parseInt(id),
+                user_id: userId,
+                registration_date: new Date(),
+                status: 'registered'
+            },
+            include: {
+                users: {
+                    select: {
+                        user_id: true,
+                        full_name: true,
+                        email: true,
+                        profile_picture: true,
+                        phone_number: true
+                    }
+                }
+            }
+        });
+
+        // Update registered count
+        await prisma.posts.update({
+            where: { post_id: parseInt(id) },
+            data: {
+                event_registered_count: {
+                    increment: 1
+                }
+            }
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Berhasil mendaftar event",
+            data: registration
+        });
+
+    } catch (error) {
+        console.error("Register For Event Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Gagal mendaftar event",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+export const cancelEventRegistration = async (req, res) => {
+    try {
+        const { id } = req.params; // post_id
+        const userId = req.user.id;
+
+        const registration = await prisma.event_participants.findFirst({
+            where: {
+                post_id: parseInt(id),
+                user_id: userId
+            }
+        });
+
+        if (!registration) {
+            return res.status(404).json({
+                success: false,
+                message: "Pendaftaran event tidak ditemukan"
+            });
+        }
+
+        // Hanya bisa cancel jika status registered atau attended
+        if (registration.status === 'attended') {
+            return res.status(400).json({
+                success: false,
+                message: "Tidak dapat membatalkan pendaftaran karena sudah attended"
+            });
+        }
+
+        // Update status menjadi cancelled
+        await prisma.event_participants.update({
+            where: {
+                participant_id: registration.participant_id
+            },
+            data: {
+                status: 'cancelled'
+            }
+        });
+
+        // Update registered count
+        await prisma.posts.update({
+            where: { post_id: parseInt(id) },
+            data: {
+                event_registered_count: {
+                    decrement: 1
+                }
+            }
+        });
+
+        return res.json({
+            success: true,
+            message: "Berhasil membatalkan pendaftaran event"
+        });
+
+    } catch (error) {
+        console.error("Cancel Event Registration Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Gagal membatalkan pendaftaran event",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+export const getEventParticipants = async (req, res) => {
+    try {
+        const { id } = req.params; // post_id
+        const { page = 1, limit = 20, status } = req.query;
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const take = parseInt(limit);
+
+        const post = await prisma.posts.findUnique({
+            where: { 
+                post_id: parseInt(id),
+                post_type: 'event'
+            }
+        });
+
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                message: "Event tidak ditemukan"
+            });
+        }
+
+        const where = {
+            post_id: parseInt(id)
+        };
+
+        if (status) {
+            where.status = status;
+        }
+
+        const [participants, total] = await Promise.all([
+            prisma.event_participants.findMany({
+                where,
+                include: {
+                    users: {
+                        select: {
+                            user_id: true,
+                            full_name: true,
+                            email: true,
+                            profile_picture: true,
+                            phone_number: true
+                        }
+                    }
+                },
+                orderBy: {
+                    registration_date: 'desc'
+                },
+                skip,
+                take
+            }),
+            prisma.event_participants.count({ where })
+        ]);
+
+        return res.json({
+            success: true,
+            data: participants,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                totalPages: Math.ceil(total / parseInt(limit))
+            }
+        });
+
+    } catch (error) {
+        console.error("Get Event Participants Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Gagal mengambil daftar peserta",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+export const updateParticipantStatus = async (req, res) => {
+    try {
+        const { id } = req.params; // post_id
+        const { participant_id, status } = req.body;
+        const userId = req.user.id;
+
+        const post = await prisma.posts.findUnique({
+            where: { 
+                post_id: parseInt(id),
+                post_type: 'event'
+            }
+        });
+
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                message: "Event tidak ditemukan"
+            });
+        }
+
+        // Cek apakah user adalah admin komunitas atau author event
+        const isAuthor = post.author_id === userId;
+        const isSystemAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
+        
+        let isCommunityAdmin = false;
+        if (!isAuthor && !isSystemAdmin) {
+            const admin = await prisma.community_admins.findFirst({
+                where: {
+                    community_id: post.community_id,
+                    user_id: userId
+                }
+            });
+            isCommunityAdmin = !!admin;
+        }
+
+        if (!isAuthor && !isCommunityAdmin && !isSystemAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: "Anda tidak memiliki akses untuk mengupdate status peserta"
+            });
+        }
+
+        const participant = await prisma.event_participants.findFirst({
+            where: {
+                participant_id: parseInt(participant_id),
+                post_id: parseInt(id)
+            }
+        });
+
+        if (!participant) {
+            return res.status(404).json({
+                success: false,
+                message: "Peserta tidak ditemukan"
+            });
+        }
+
+        const updatedParticipant = await prisma.event_participants.update({
+            where: {
+                participant_id: parseInt(participant_id)
+            },
+            data: {
+                status: status
+            },
+            include: {
+                users: {
+                    select: {
+                        user_id: true,
+                        full_name: true,
+                        email: true,
+                        profile_picture: true
+                    }
+                }
+            }
+        });
+
+        return res.json({
+            success: true,
+            message: "Status peserta berhasil diperbarui",
+            data: updatedParticipant
+        });
+
+    } catch (error) {
+        console.error("Update Participant Status Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Gagal memperbarui status peserta",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// ============================================
+// COMMENTS
+// ============================================
 
 export const getCommentsByPost = async (req, res) => {
     try {

@@ -16,17 +16,16 @@ model categories {
   communities          communities[]
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model collaboration_requests {
   collab_id                                                             Int                @id @default(autoincrement())
   sender_community_id                                                   Int
   receiver_community_id                                                 Int
   message                                                               String?
   status                                                                collab_status_enum @default(pending)
-  event_id                                                              Int?
+  post_id                                                               Int?               // Ubah dari event_id ke post_id
   created_at                                                            DateTime           @default(now()) @db.Timestamp(6)
   updated_at                                                            DateTime           @default(now()) @db.Timestamp(6)
-  events                                                                events?            @relation(fields: [event_id], references: [event_id], onUpdate: NoAction)
+  posts                                                                 posts?             @relation(fields: [post_id], references: [post_id], onUpdate: NoAction)
   communities_collaboration_requests_receiver_community_idTocommunities communities        @relation("collaboration_requests_receiver_community_idTocommunities", fields: [receiver_community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
   communities_collaboration_requests_sender_community_idTocommunities   communities        @relation("collaboration_requests_sender_community_idTocommunities", fields: [sender_community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -61,7 +60,6 @@ model communities {
   community_locations                                                              community_locations[]
   community_members                                                                community_members[]
   donation_campaigns                                                               donation_campaigns[]
-  events                                                                           events[]
   notifications                                                                    notifications[]
   posts                                                                            posts[]
 
@@ -181,43 +179,15 @@ model donations {
 
 model event_participants {
   participant_id    Int                     @id @default(autoincrement())
-  event_id          Int
+  post_id           Int                     // Ubah dari event_id ke post_id
   user_id           Int
   registration_date DateTime                @default(now()) @db.Timestamp(6)
   status            participant_status_enum @default(registered)
-  events            events                  @relation(fields: [event_id], references: [event_id], onDelete: Cascade, onUpdate: NoAction)
+  posts             posts                   @relation(fields: [post_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
   users             users                   @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([event_id, user_id])
-  @@index([event_id], map: "idx_event_participants_event_id")
-}
-
-model events {
-  event_id                Int                      @id @default(autoincrement())
-  community_id            Int
-  creator_id              Int
-  title                   String                   @db.VarChar(200)
-  description             String?
-  poster                  String?                  @db.VarChar(255)
-  event_date              DateTime                 @db.Date
-  start_time              DateTime?                @db.Time(6)
-  end_time                DateTime?                @db.Time(6)
-  location                String?                  @db.VarChar(255)
-  latitude                Decimal?                 @db.Decimal(10, 8)
-  longitude               Decimal?                 @db.Decimal(11, 8)
-  quota                   Int?
-  registered_participants Int                      @default(0)
-  status                  event_status_enum        @default(upcoming)
-  created_at              DateTime                 @default(now()) @db.Timestamp(6)
-  updated_at              DateTime                 @default(now()) @db.Timestamp(6)
-  collaboration_requests  collaboration_requests[]
-  event_participants      event_participants[]
-  communities             communities              @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
-  users                   users                    @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([community_id], map: "idx_events_community_id")
-  @@index([event_date], map: "idx_events_event_date")
-  @@index([status], map: "idx_events_status")
+  @@unique([post_id, user_id])
+  @@index([post_id], map: "idx_event_participants_post_id")
 }
 
 model goods_categories {
@@ -320,27 +290,48 @@ model post_media {
 }
 
 model posts {
-  post_id        Int              @id @default(autoincrement())
-  community_id   Int
-  author_id      Int
-  title          String           @db.VarChar(200)
-  content        String?
-  post_type      post_type_enum   @default(activity)
-  is_pinned      Boolean          @default(false)
-  total_likes    Int              @default(0)
-  total_comments Int              @default(0)
-  status         post_status_enum @default(active)
-  created_at     DateTime         @default(now()) @db.Timestamp(6)
-  updated_at     DateTime         @default(now()) @db.Timestamp(6)
-  post_comments  post_comments[]
-  post_likes     post_likes[]
-  post_media     post_media[]
-  users          users            @relation(fields: [author_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  communities    communities      @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  post_id              Int                   @id @default(autoincrement())
+  community_id         Int
+  author_id            Int
+  title                String                @db.VarChar(200)
+  content              String?
+  post_type            post_type_enum        @default(regular)
+  visibility           post_visibility_enum  @default(public)
+  is_pinned            Boolean               @default(false)
+  total_likes          Int                   @default(0)
+  total_comments       Int                   @default(0)
+  status               post_status_enum      @default(active)
+  
+  // Event-specific fields (nullable for regular posts)
+  event_date           DateTime?             @db.Date
+  event_start_time     DateTime?             @db.Time(6)
+  event_end_time       DateTime?             @db.Time(6)
+  event_location       String?               @db.VarChar(255)
+  event_latitude       Decimal?              @db.Decimal(10, 8)
+  event_longitude      Decimal?              @db.Decimal(11, 8)
+  event_quota          Int?
+  event_registration_link String?            @db.VarChar(500)
+  event_registered_count Int                 @default(0)
+  event_status         event_status_enum?    @default(upcoming)
+  
+  created_at           DateTime              @default(now()) @db.Timestamp(6)
+  updated_at           DateTime              @default(now()) @db.Timestamp(6)
+  
+  // Relations
+  collaboration_requests collaboration_requests[]
+  event_participants   event_participants[]
+  post_comments        post_comments[]
+  post_likes           post_likes[]
+  post_media           post_media[]
+  users                users                 @relation(fields: [author_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  communities          communities           @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([author_id], map: "idx_posts_author_id")
   @@index([community_id], map: "idx_posts_community_id")
   @@index([status], map: "idx_posts_status")
+  @@index([post_type], map: "idx_posts_post_type")
+  @@index([event_date], map: "idx_posts_event_date")
+  @@index([visibility], map: "idx_posts_visibility")
 }
 
 model reports {
@@ -391,7 +382,6 @@ model users {
   donation_campaigns                                donation_campaigns[]
   donations                                         donations[]
   event_participants                                event_participants[]
-  events                                            events[]
   notification_reads                                notification_reads[]
   notification_targets                              notification_targets[]
   notifications_notifications_created_byTousers     notifications[]           @relation("notifications_created_byTousers")
@@ -498,9 +488,13 @@ enum post_status_enum {
 }
 
 enum post_type_enum {
-  activity
-  announcement
-  achievement
+  regular
+  event
+}
+
+enum post_visibility_enum {
+  public
+  community_only
 }
 
 enum report_status_enum {

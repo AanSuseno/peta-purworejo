@@ -10,6 +10,11 @@ import {
     updatePost,
     deletePost,
     toggleLikePost,
+    // Event Participants
+    registerForEvent,
+    cancelEventRegistration,
+    getEventParticipants,
+    updateParticipantStatus,
     // Comments
     getCommentsByPost,
     createComment,
@@ -17,8 +22,7 @@ import {
     deleteComment
 } from "../controllers/posts.controller.js";
 import {
-    authenticate,
-    isCommunityAdminOrFounder
+    authenticate
 } from "../middlewares/auth.middleware.js";
 import {
     uploadPostImages
@@ -62,6 +66,22 @@ router.delete("/posts/:id", authenticate, deletePost);
 
 // LIKE/UNLIKE Post
 router.post("/posts/:id/like", authenticate, toggleLikePost);
+
+// ============================================
+// 🎯 EVENT PARTICIPANTS
+// ============================================
+
+// Register for Event
+router.post("/posts/:id/event/register", authenticate, registerForEvent);
+
+// Cancel Event Registration
+router.delete("/posts/:id/event/cancel", authenticate, cancelEventRegistration);
+
+// Get Event Participants
+router.get("/posts/:id/event/participants", authenticate, getEventParticipants);
+
+// Update Participant Status (for admin/author)
+router.put("/posts/:id/event/participants", authenticate, updateParticipantStatus);
 
 // ============================================
 // 💬 COMMENTS
