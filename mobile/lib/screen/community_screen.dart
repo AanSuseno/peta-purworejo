@@ -398,7 +398,16 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
     return ListView.separated(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      // Padding bawah sengaja dilebihkan (bukan cuma 24) supaya kartu
+      // komunitas paling bawah tidak ketutupan bottom navigation bar --
+      // 20 untuk jarak visual normal + tinggi bottom nav (~56) + safe
+      // area inset perangkat (notch/gesture bar di iPhone/Android baru).
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        20 + kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom,
+      ),
       itemCount: _communities.length + (_page < _totalPages ? 1 : 0),
       separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {

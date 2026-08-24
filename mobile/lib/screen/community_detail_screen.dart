@@ -6,16 +6,16 @@ import 'package:provider/provider.dart';
 import '../provider/auth_provider.dart';
 import '../services/auth_service.dart';
 import '../services/communities_service.dart';
+import 'edit_community_screen.dart';
 
 /// Layar detail 1 komunitas. Dibuka dari kartu di [CommunityScreen].
 ///
 /// CATATAN: endpoint buat post & buat event di komunitas belum ada di
 /// backend, jadi kedua tombol itu untuk sekarang cuma mengarah ke layar
 /// placeholder ([_ComingSoonScreen]) supaya UI-nya sudah siap dan tinggal
-/// disambungkan begitu endpoint-nya jadi. Sama untuk tombol "Edit
-/// Komunitas" -- endpoint PUT /communities/:id sebenarnya sudah ada
-/// (lihat communities.routes.js), tapi form edit-nya belum dibuat, jadi
-/// untuk sekarang juga diarahkan ke placeholder.
+/// disambungkan begitu endpoint-nya jadi. Tombol "Edit Komunitas" sudah
+/// disambungkan ke [EditCommunityScreen] (PUT /communities/:id +
+/// upload logo/banner).
 class CommunityDetailScreen extends StatefulWidget {
   final int communityId;
 
@@ -191,16 +191,27 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     );
   }
 
-  void _openEditCommunity() {
-    Navigator.of(context).push(
+  Future<void> _openEditCommunity() async {
+    if (_community == null) return;
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
-        builder: (_) => const _ComingSoonScreen(
-          title: 'Edit Komunitas',
-          icon: Icons.edit_outlined,
-          message: 'Form edit komunitas belum dibuat.\nEndpoint PUT /communities/:id sudah ada di backend, tinggal disambungkan ke sini.',
-        ),
+        builder: (_) => EditCommunityScreen(community: _community!),
       ),
     );
+
+    // EditCommunityScreen pop dengan data komunitas terbaru kalau berhasil
+    // simpan -- langsung dipakai di sini tanpa perlu fetch ulang. Kalau
+    // user cuma ganti logo/banner lalu back tanpa tekan "Simpan", tetap
+    // aman: layar ini akan reload karena RefreshIndicator/pop biasa tidak
+    // otomatis refresh, jadi panggil _loadDetail supaya logo/banner baru
+    // (yang sudah tersimpan di server) ikut termuat.
+    if (!mounted) return;
+    if (result != null) {
+      setState(() => _community = result);
+    } else {
+      _loadDetail();
+    }
   }
 
   String? _resolveUrl(String? path) {

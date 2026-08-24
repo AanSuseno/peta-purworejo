@@ -32,9 +32,18 @@ export const authenticate = async (req, res, next) => {
             });
         }
 
+        // Pastikan decoded memiliki userId
+        const userId = decoded.userId || decoded.id || decoded.user_id;
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Token tidak valid: userId tidak ditemukan"
+            });
+        }
+
         const user = await prisma.users.findUnique({
             where: {
-                user_id: decoded.userId
+                user_id: parseInt(userId)
             },
             include: {
                 user_roles: true
@@ -180,8 +189,7 @@ export const isSystemAdmin = async (req, res, next) => {
     }
 };
 
-// 🏢 Check Community Admin/Founder
-export const isCommunityAdminOrFounder = (communityIdParam = 'communityId') => {
+export const isCommunityAdminOrFounder = (communityIdParam = 'id') => {
     return async (req, res, next) => {
         try {
             if (!req.user) {
@@ -191,28 +199,9 @@ export const isCommunityAdminOrFounder = (communityIdParam = 'communityId') => {
                 });
             }
 
-            const user = await prisma.users.findUnique({
-                where: {
-                    user_id: req.user.id
-                },
-                include: {
-                    user_roles: true
-                }
-            });
-
-            if (!user) {
-                return res.status(404).json({
-                    success: false,
-                    message: "User tidak ditemukan"
-                });
-            }
-
-            // System admin memiliki akses ke semua komunitas
-            if (user.user_roles?.role_name?.toLowerCase() === 'system_admin') {
-                return next();
-            }
-
-            // Ambil community_id dari params, query, atau body
+            const userId = req.user.id;
+            
+            // Ambil community_id dari params (default 'id')
             const communityId = req.params[communityIdParam] || 
                                req.query[communityIdParam] || 
                                req.body[communityIdParam];
@@ -224,44 +213,71 @@ export const isCommunityAdminOrFounder = (communityIdParam = 'communityId') => {
                 });
             }
 
-            // Cek apakah user adalah admin atau founder dari komunitas
-            const communityAdmin = await prisma.community_admins.findFirst({
+            console.log('[isCommunityAdminOrFounder] Checking permission:', {
+                communityId,
+                userId,
+                param: communityIdParam
+            });
+
+            // CEK 1: Apakah user adalah admin di community_admins?
+            const admin = await prisma.community_admins.findFirst({
                 where: {
                     community_id: parseInt(communityId),
-                    user_id: user.user_id,
-                    role: {
-                        in: ['admin', 'founder']
-                    }
+                    user_id: userId
                 }
             });
 
-            // Cek apakah user adalah founder (dari communities table)
-            const communityFounder = await prisma.communities.findFirst({
-                where: {
-                    community_id: parseInt(communityId),
-                    founder_id: user.user_id
-                }
-            });
-
-            if (!communityAdmin && !communityFounder) {
-                return res.status(403).json({
-                    success: false,
-                    message: "Akses ditolak. Anda bukan admin atau founder dari komunitas ini.",
-                    yourRole: user.user_roles?.role_name || 'unknown'
-                });
+            if (admin) {
+                console.log('[isCommunityAdminOrFounder] User is admin with role:', admin.role);
+                req.communityAccess = {
+                    isAdmin: true,
+                    isFounder: admin.role === 'founder',
+                    role: admin.role
+                };
+                return next();
             }
 
-            // Simpan informasi admin/founder ke request
-            req.communityAccess = {
-                isAdmin: !!communityAdmin,
-                isFounder: !!communityFounder,
-                role: communityAdmin?.role || 'founder'
-            };
+            // CEK 2: Apakah user adalah system admin?
+            const user = await prisma.users.findUnique({
+                where: { user_id: userId },
+                include: { user_roles: true }
+            });
 
-            next();
+            if (user?.user_roles?.role_name?.toLowerCase() === 'system_admin') {
+                console.log('[isCommunityAdminOrFounder] User is system admin');
+                req.communityAccess = {
+                    isAdmin: true,
+                    isFounder: false,
+                    role: 'system_admin'
+                };
+                return next();
+            }
+
+            // CEK 3: (OPTIONAL) Cek founder_id di communities untuk backward compatibility
+            // HAPUS INI jika Anda sudah yakin semua transfer ownership mengupdate community_admins
+            const community = await prisma.communities.findUnique({
+                where: { community_id: parseInt(communityId) },
+                select: { founder_id: true }
+            });
+
+            if (community && community.founder_id === userId) {
+                console.log('[isCommunityAdminOrFounder] User is founder (from communities table)');
+                req.communityAccess = {
+                    isAdmin: true,
+                    isFounder: true,
+                    role: 'founder'
+                };
+                return next();
+            }
+
+            console.log('[isCommunityAdminOrFounder] Access denied');
+            return res.status(403).json({
+                success: false,
+                message: "Akses ditolak. Anda bukan admin atau founder dari komunitas ini."
+            });
 
         } catch (error) {
-            console.error("Community Admin Check Error:", error);
+            console.error("[isCommunityAdminOrFounder] Error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Terjadi kesalahan saat validasi akses komunitas"
@@ -373,30 +389,4 @@ export const isOwnResource = (model, idParam = 'id', userIdField = 'user_id') =>
             });
         }
     };
-};
-
-export const requireAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      success: false,
-      message: "Token tidak ditemukan",
-      error: "MISSING_TOKEN",
-    });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: "Token tidak valid atau kadaluarsa",
-      error: "INVALID_TOKEN",
-    });
-  }
 };

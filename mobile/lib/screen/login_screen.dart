@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final response = await http
           .get(
-            Uri.parse('http://192.168.1.6:3000/health'),
+            Uri.parse('https://mewbojub67zl.shares.zrok.io/health'),
             headers: {'Content-Type': 'application/json'},
           )
           .timeout(const Duration(seconds: 3));

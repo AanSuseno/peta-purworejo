@@ -1,13 +1,11 @@
+// routes/communities.routes.js
 import express from "express";
 import {
     getAllCommunities,
     getCommunityById,
-    getCommunityBySlug,
-    searchCommunities,
     createCommunity,
     updateCommunity,
     deleteCommunity,
-    getCommunityMembers,
     joinCommunity,
     leaveCommunity,
     addCommunityAdmin,
@@ -21,8 +19,8 @@ import {
 } from "../controllers/communities.controller.js";
 import {
     authenticate,
-    isSystemAdmin,
-    isCommunityAdminOrFounder
+    isCommunityAdminOrFounder,
+    isSystemAdmin
 } from "../middlewares/auth.middleware.js";
 import {
     uploadCommunityLogo as uploadLogoMiddleware,
@@ -32,22 +30,32 @@ import {
 
 const router = express.Router();
 
+// Public routes (butuh auth)
 router.get("/", authenticate, getAllCommunities);
-router.get("/search", authenticate, searchCommunities);
-router.get("/slug/:slug", authenticate, getCommunityBySlug);
 router.get("/:id", authenticate, getCommunityById);
+
+// Create community
 router.post("/", authenticate, createCommunity);
+
+// Update & Delete - butuh admin/founder
 router.put("/:id", authenticate, isCommunityAdminOrFounder('id'), updateCommunity);
 router.delete("/:id", authenticate, isCommunityAdminOrFounder('id'), deleteCommunity);
-router.get("/:id/members", authenticate, getCommunityMembers);
+
+// Join & Leave
 router.post("/:id/join", authenticate, joinCommunity);
 router.post("/:id/leave", authenticate, leaveCommunity);
+
+// Admin management - butuh admin/founder
 router.post("/:id/admins", authenticate, isCommunityAdminOrFounder('id'), addCommunityAdmin);
 router.delete("/:id/admins/:adminId", authenticate, isCommunityAdminOrFounder('id'), removeCommunityAdmin);
 router.post("/:id/transfer", authenticate, isCommunityAdminOrFounder('id'), transferOwnership);
+
+// Media upload - butuh admin/founder
 router.post("/:id/logo", authenticate, isCommunityAdminOrFounder('id'), uploadLogoMiddleware, uploadCommunityLogo);
 router.post("/:id/banner", authenticate, isCommunityAdminOrFounder('id'), uploadBannerMiddleware, uploadCommunityBanner);
 router.post("/:id/media", authenticate, isCommunityAdminOrFounder('id'), uploadMediaMiddleware, uploadCommunityMedia);
+
+// Delete media - butuh admin/founder
 router.delete("/:id/logo", authenticate, isCommunityAdminOrFounder('id'), deleteCommunityLogo);
 router.delete("/:id/banner", authenticate, isCommunityAdminOrFounder('id'), deleteCommunityBanner);
 

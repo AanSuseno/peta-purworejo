@@ -1,5 +1,7 @@
 import prisma from "../lib/prisma.js";
 import slugify from "slugify";
+import path from "path";
+import fs from 'fs';
 
 export const getAllCommunities = async (req, res) => {
     try {
@@ -1262,6 +1264,7 @@ export const transferOwnership = async (req, res) => {
         }
 
         await prisma.$transaction([
+            // 1. Update founder_id di communities
             prisma.communities.update({
                 where: { community_id: parseInt(id) },
                 data: {
@@ -1269,6 +1272,19 @@ export const transferOwnership = async (req, res) => {
                     updated_at: new Date()
                 }
             }),
+            
+            // 2. Update role di community_admins - old founder jadi admin
+            prisma.community_admins.updateMany({
+                where: {
+                    community_id: parseInt(id),
+                    user_id: userId
+                },
+                data: {
+                    role: 'admin'
+                }
+            }),
+            
+            // 3. Update role di community_admins - new founder jadi founder
             prisma.community_admins.updateMany({
                 where: {
                     community_id: parseInt(id),
@@ -1278,14 +1294,25 @@ export const transferOwnership = async (req, res) => {
                     role: 'founder'
                 }
             }),
-            prisma.community_admins.updateMany({
+            
+            // 4. Jika new founder belum ada di community_admins, tambahkan
+            // Cek dulu apakah sudah ada
+            prisma.community_admins.upsert({
                 where: {
-                    community_id: parseInt(id),
-                    user_id: userId,
-                    role: 'founder'
+                    community_id_user_id: {
+                        community_id: parseInt(id),
+                        user_id: parseInt(new_founder_id)
+                    }
                 },
-                data: {
-                    role: 'admin'
+                update: {
+                    role: 'founder',
+                    assigned_at: new Date()
+                },
+                create: {
+                    community_id: parseInt(id),
+                    user_id: parseInt(new_founder_id),
+                    role: 'founder',
+                    assigned_at: new Date()
                 }
             })
         ]);

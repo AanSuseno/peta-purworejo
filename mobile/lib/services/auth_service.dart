@@ -26,7 +26,7 @@ class ValidationException implements Exception {
 }
 
 class AuthService {
-  static const String baseUrl = 'http://192.168.1.6:3000';
+  static const String baseUrl = 'https://mewbojub67zl.shares.zrok.io';
 
   // Router users.routes.js diasumsikan di-mount di "/users". Sesuaikan
   // ini kalau ternyata mount path-nya beda (mis. "/api/users").

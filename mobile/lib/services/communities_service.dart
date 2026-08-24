@@ -23,8 +23,13 @@ class CommunityPage {
   bool get hasMore => page < totalPages;
 }
 
-/// Service untuk endpoint "/communities". Mengikuti pola AuthService:
-/// exception khusus untuk 401/403 supaya bisa dibedakan dari error jaringan.
+/// Service untuk endpoint "/communities". Mengikuti pola AuthService, tapi
+/// membedakan 401 (token invalid/kadaluarsa -> AuthException) dari 403
+/// (token valid, tapi user tidak diizinkan -- mis. bukan admin/founder
+/// komunitas ini -> Exception biasa dengan pesan asli dari backend).
+/// Jangan gabungkan lagi keduanya jadi satu pesan generik "Token tidak
+/// valid", karena itu menyesatkan saat penyebab sebenarnya adalah izin,
+/// bukan sesi habis.
 class CommunitiesService {
   static const String baseUrl = AuthService.baseUrl;
   static const String _path = '/communities';
@@ -74,8 +79,18 @@ class CommunitiesService {
         );
       }
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
       }
 
       throw Exception(
@@ -111,8 +126,18 @@ class CommunitiesService {
         return data['data'] as Map<String, dynamic>;
       }
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
       }
 
       if (response.statusCode == 404) {
@@ -147,8 +172,18 @@ class CommunitiesService {
 
       if (response.statusCode == 200) return;
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
       }
 
       // 400 dipakai backend juga untuk "sudah jadi anggota" -> pesannya
@@ -176,8 +211,18 @@ class CommunitiesService {
 
       if (response.statusCode == 200) return;
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
       }
 
       throw Exception(data['message'] ?? 'Gagal keluar dari komunitas');
@@ -267,8 +312,18 @@ class CommunitiesService {
         return data['data'] as Map<String, dynamic>;
       }
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
       }
 
       if (response.statusCode == 409) {
@@ -287,6 +342,88 @@ class CommunitiesService {
     }
   }
 
+  /// PUT /communities/:id — edit data teks komunitas yang sudah ada.
+  /// Field teks (description, kecamatan, address, contactEmail,
+  /// contactPhone) selalu dikirim apa adanya (termasuk string kosong)
+  /// supaya user bisa mengosongkan field yang sebelumnya terisi -- server
+  /// membedakan "tidak dikirim" (key absen) dengan "dikirim kosong" lewat
+  /// `field !== undefined`. Khusus categoryId, hanya dikirim kalau memang
+  /// dipilih karena backend memakai `category_id ? ... : undefined`
+  /// (0/null dianggap "tidak diubah").
+  Future<Map<String, dynamic>> updateCommunity({
+    required String token,
+    required int communityId,
+    required String communityName,
+    String description = '',
+    int? categoryId,
+    String kecamatan = '',
+    String address = '',
+    String contactEmail = '',
+    String contactPhone = '',
+  }) async {
+    final uri = Uri.parse('$baseUrl$_path/$communityId');
+
+    try {
+      final response = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'community_name': communityName.trim(),
+          'description': description.trim(),
+          if (categoryId != null) 'category_id': categoryId,
+          'kecamatan': kecamatan.trim(),
+          'address': address.trim(),
+          'contact_email': contactEmail.trim(),
+          'contact_phone': contactPhone.trim(),
+        }),
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Komunitas tidak ditemukan');
+      }
+
+      if (response.statusCode == 409) {
+        throw Exception(data['message'] ?? 'Nama komunitas sudah dipakai');
+      }
+
+      if (response.statusCode == 400) {
+        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
+      }
+
+      throw Exception(
+        data['message'] ??
+            'Gagal memperbarui komunitas (${response.statusCode})',
+      );
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } on FormatException {
+      throw Exception('Response server tidak valid');
+    }
+  }
+
   /// PATCH internal helper: upload file (logo/banner) lewat multipart ke
   /// "/communities/:id/logo" atau "/communities/:id/banner".
   ///
@@ -302,6 +439,10 @@ class CommunitiesService {
   }) async {
     final uri = Uri.parse('$baseUrl$_path/$communityId/$endpoint');
     final fileName = '${endpoint}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    debugPrint('[Upload] URL: $uri');
+    debugPrint('[Upload] Token: ${token.substring(0, 10)}...');
+    debugPrint('[Upload] File path: ${imageFile.path}');
+    debugPrint('[Upload] File size: ${await imageFile.length()} bytes');
 
     try {
       final request = http.MultipartRequest('POST', uri)
@@ -315,16 +456,32 @@ class CommunitiesService {
           ),
         );
 
+      debugPrint('[Upload] Headers: ${request.headers}');
+      debugPrint('[Upload] Files: ${request.files.length}');
+
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      debugPrint('[Upload] Status: ${response.statusCode}');
+      debugPrint('[Upload] Response: ${response.body}');
 
       if (response.statusCode == 200) {
         return data['data'] as Map<String, dynamic>;
       }
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      // 403 beda arti dari 401: token-nya VALID, tapi user memang tidak
+      // diizinkan (mis. bukan admin/founder komunitas ini). Jangan
+      // dilabeli "token tidak valid" -- tampilkan pesan asli dari
+      // backend supaya user tahu penyebab sebenarnya.
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
       }
 
       throw Exception(
