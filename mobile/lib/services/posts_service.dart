@@ -828,67 +828,6 @@ class PostsService {
     }
   }
 
-  /// DELETE /posts/posts/:id
-  Future<void> deletePost({required String token, required int postId}) async {
-    const tag = 'deletePost';
-    _debugLog(tag, 'Deleting post ID: $postId');
-
-    final uri = Uri.parse('$baseUrl/posts/posts/$postId');
-
-    try {
-      final response = await http.delete(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      _debugResponse(tag, response);
-
-      if (_isHtmlResponse(response.body)) {
-        _debugError(tag, '❌ Server returned HTML!');
-        throw Exception('Server mengembalikan HTML bukan JSON.');
-      }
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-
-      if (response.statusCode == 200) {
-        _debugLog(tag, '✅ Post deleted successfully!');
-        return;
-      }
-
-      if (response.statusCode == 401) {
-        _debugLog(tag, '❌ Token tidak valid atau kadaluarsa');
-        throw AuthException('Token tidak valid atau kadaluarsa');
-      }
-
-      if (response.statusCode == 403) {
-        _debugLog(tag, '❌ Akses ditolak: ${data['message']}');
-        throw Exception(data['message'] ?? 'Anda tidak memiliki akses');
-      }
-
-      if (response.statusCode == 404) {
-        _debugLog(tag, '❌ Postingan tidak ditemukan');
-        throw Exception(data['message'] ?? 'Postingan tidak ditemukan');
-      }
-
-      _debugError(
-        tag,
-        '❌ Status code: ${response.statusCode}, message: ${data['message']}',
-      );
-      throw Exception(
-        data['message'] ?? 'Gagal menghapus postingan (${response.statusCode})',
-      );
-    } on http.ClientException catch (e) {
-      _debugError(tag, '❌ ClientException: $e');
-      throw Exception('Gagal terhubung ke server');
-    } catch (e) {
-      _debugError(tag, '❌ Error: $e');
-      rethrow;
-    }
-  }
-
   /// POST /posts/posts/:id/like
   Future<Map<String, dynamic>> toggleLike({
     required String token,
@@ -1393,6 +1332,66 @@ class PostsService {
       );
       throw Exception(
         data['message'] ?? 'Gagal memuat peserta (${response.statusCode})',
+      );
+    } on http.ClientException catch (e) {
+      _debugError(tag, '❌ ClientException: $e');
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, '❌ Error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deletePost({required String token, required int postId}) async {
+    const tag = 'deletePost';
+    _debugLog(tag, 'Deleting post ID: $postId');
+
+    final uri = Uri.parse('$baseUrl/posts/posts/$postId');
+
+    try {
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      _debugResponse(tag, response);
+
+      if (_isHtmlResponse(response.body)) {
+        _debugError(tag, '❌ Server returned HTML!');
+        throw Exception('Server mengembalikan HTML bukan JSON.');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Post deleted successfully!');
+        return;
+      }
+
+      if (response.statusCode == 401) {
+        _debugLog(tag, '❌ Token tidak valid atau kadaluarsa');
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        _debugLog(tag, '❌ Akses ditolak: ${data['message']}');
+        throw Exception(data['message'] ?? 'Anda tidak memiliki akses');
+      }
+
+      if (response.statusCode == 404) {
+        _debugLog(tag, '❌ Postingan tidak ditemukan');
+        throw Exception(data['message'] ?? 'Postingan tidak ditemukan');
+      }
+
+      _debugError(
+        tag,
+        '❌ Status code: ${response.statusCode}, message: ${data['message']}',
+      );
+      throw Exception(
+        data['message'] ?? 'Gagal menghapus postingan (${response.statusCode})',
       );
     } on http.ClientException catch (e) {
       _debugError(tag, '❌ ClientException: $e');

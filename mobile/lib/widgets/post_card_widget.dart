@@ -1,4 +1,5 @@
 // lib/widgets/post_card_widget.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile/constants/colors.dart';
@@ -10,9 +11,13 @@ class PostCardWidget extends StatelessWidget {
   final bool showCommunityInfo;
   final bool isLiked;
   final bool? isLiking;
+  final bool isAuthor;
+  final bool isAdmin;
   final VoidCallback onTap;
   final VoidCallback onLike;
   final VoidCallback onComment;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final VoidCallback? onRegisterEvent;
   final VoidCallback? onCancelEvent;
 
@@ -22,9 +27,13 @@ class PostCardWidget extends StatelessWidget {
     this.showCommunityInfo = true,
     required this.isLiked,
     this.isLiking,
+    this.isAuthor = false,
+    this.isAdmin = false,
     required this.onTap,
     required this.onLike,
     required this.onComment,
+    this.onEdit,
+    this.onDelete,
     this.onRegisterEvent,
     this.onCancelEvent,
   });
@@ -36,10 +45,6 @@ class PostCardWidget extends StatelessWidget {
   }
 
   bool get isEvent => post['is_event'] == true || post['post_type'] == 'event';
-  bool get isParticipant => post['is_participant'] == true;
-  int get registeredCount => post['event_registered_count'] ?? 0;
-  int? get quota => post['event_quota'];
-  bool get isFull => quota != null && registeredCount >= quota!;
   String? get eventStatus => post['event_status'];
 
   String getEventStatusLabel() {
@@ -119,13 +124,6 @@ class PostCardWidget extends StatelessWidget {
 
   Widget _buildMediaGallery(List<dynamic> mediaList) {
     if (mediaList.isEmpty) return const SizedBox.shrink();
-
-    final mediaUrls = mediaList
-        .map((m) => _resolveUrl(m['media_url'] as String?))
-        .where((url) => url != null)
-        .toList();
-
-    if (mediaUrls.isEmpty) return const SizedBox.shrink();
 
     final List<Map<String, String>> mediaItems = [];
     for (int i = 0; i < mediaList.length; i++) {
@@ -361,6 +359,19 @@ class PostCardWidget extends StatelessWidget {
     final commentsCount = post['comments_count'] ?? 0;
     final mediaList = post['post_media'] as List? ?? [];
 
+    final postAuthorId = post['author_id'] as int?;
+    final isAuthorBool = isAuthor; // dari parameter
+    final isAdminBool = isAdmin; // dari parameter
+
+    final canManage = isAuthorBool || isAdminBool;
+
+    // Debug print
+    if (kDebugMode) {
+      print(
+        '📝 Post ID: ${post['post_id']}, Author ID: $postAuthorId, isAuthor: $isAuthorBool, isAdmin: $isAdminBool, canManage: $canManage',
+      );
+    }
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -434,11 +445,58 @@ class PostCardWidget extends StatelessWidget {
                       color: Colors.grey.shade400,
                     ),
                   ),
+                  // Menu Edit & Hapus (hanya untuk author atau admin)
+                  if (canManage) ...[
+                    const SizedBox(width: 4),
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: Colors.grey.shade500,
+                      ),
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          onEdit?.call();
+                        } else if (value == 'delete') {
+                          onDelete?.call();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit_outlined, size: 18),
+                              SizedBox(width: 8),
+                              Text('Edit'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: Colors.red,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Hapus',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
 
-            // Badge event
+            // Badge event (tanpa informasi peserta)
             if (isEvent) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -534,7 +592,7 @@ class PostCardWidget extends StatelessWidget {
             // Media Gallery
             _buildMediaGallery(mediaList),
 
-            // Event info (if event)
+            // Event info (tanpa peserta dan tombol daftar)
             if (isEvent) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
@@ -586,144 +644,6 @@ class PostCardWidget extends StatelessWidget {
                           ),
                         ],
                       ),
-                    ],
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.people,
-                          size: 13,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '$registeredCount peserta',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11.5,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                        if (quota != null) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            '/ $quota kuota',
-                            style: GoogleFonts.poppins(
-                              fontSize: 11.5,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                        ],
-                        if (isFull) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 1,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Penuh',
-                              style: GoogleFonts.poppins(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.red.shade600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    // Event button
-                    if (eventStatus == 'upcoming' ||
-                        eventStatus == 'ongoing') ...[
-                      const SizedBox(height: 8),
-                      if (isParticipant) ...[
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              size: 14,
-                              color: AppColors.secondary,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Terdaftar',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.secondary,
-                              ),
-                            ),
-                            if (onCancelEvent != null) ...[
-                              const Spacer(),
-                              TextButton(
-                                onPressed: onCancelEvent,
-                                style: TextButton.styleFrom(
-                                  minimumSize: Size.zero,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: Text(
-                                  'Batal',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 11,
-                                    color: Colors.red.shade400,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ] else if (!isFull && onRegisterEvent != null) ...[
-                        SizedBox(
-                          width: double.infinity,
-                          height: 32,
-                          child: ElevatedButton(
-                            onPressed: onRegisterEvent,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: EdgeInsets.zero,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: Text(
-                              'Daftar Event',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ] else if (isFull) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: Text(
-                              'Kuota Penuh',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey.shade500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ],
                 ),

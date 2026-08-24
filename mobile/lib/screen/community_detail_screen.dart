@@ -12,6 +12,7 @@ import '../widgets/post_card_widget.dart';
 import 'edit_community_screen.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
+import 'edit_post_screen.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final int communityId;
@@ -37,6 +38,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
   bool _isLoadingPosts = false;
   bool _isJoinLeavePending = false;
   String? _error;
+  int? _userId;
 
   int _postPage = 1;
   int _postTotalPages = 1;
@@ -68,6 +70,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
   }
 
   Future<void> _loadDetail() async {
+    final authProvider = context.read<AuthProvider>();
     final token = await context.read<AuthProvider>().getToken();
     if (token == null) {
       setState(() {
@@ -83,6 +86,13 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     });
 
     try {
+      final userData = authProvider.userData;
+      print('🔍 Current user ID: ${userData?['user_id']}'); // Debug
+
+      setState(() {
+        _userId = userData?['user_id'] as int?;
+      });
+
       final community = await _service.fetchCommunityById(
         token,
         widget.communityId,
@@ -92,7 +102,6 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
         _community = community;
         _isLoading = false;
       });
-      // Load posts setelah community loaded
       await _loadPosts(reset: true);
     } catch (e) {
       if (!mounted) return;
@@ -132,7 +141,6 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
 
       if (!mounted) return;
 
-      // Update liked status
       for (final post in result.posts) {
         final postId = post['post_id'] as int?;
         if (postId != null && post['is_liked'] == true) {
@@ -281,81 +289,6 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     }
   }
 
-  Future<void> _handleRegisterEvent(int postId) async {
-    final token = await context.read<AuthProvider>().getToken();
-    if (token == null) return;
-
-    try {
-      await _postsService.registerEvent(token: token, postId: postId);
-      // Update post data
-      final idx = _posts.indexWhere((p) => p['post_id'] == postId);
-      if (idx != -1) {
-        final post = _posts[idx];
-        final currentCount = post['event_registered_count'] ?? 0;
-        setState(() {
-          _posts[idx] = {
-            ...post,
-            'is_participant': true,
-            'event_registered_count': currentCount + 1,
-            'participant_status': 'registered',
-          };
-        });
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Berhasil mendaftar event')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', '')),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _handleCancelEvent(int postId) async {
-    final token = await context.read<AuthProvider>().getToken();
-    if (token == null) return;
-
-    try {
-      await _postsService.cancelEventRegistration(token: token, postId: postId);
-      final idx = _posts.indexWhere((p) => p['post_id'] == postId);
-      if (idx != -1) {
-        final post = _posts[idx];
-        final currentCount = post['event_registered_count'] ?? 0;
-        setState(() {
-          _posts[idx] = {
-            ...post,
-            'is_participant': false,
-            'event_registered_count': (currentCount - 1).clamp(0, 1 << 30),
-            'participant_status': null,
-          };
-        });
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Berhasil membatalkan pendaftaran event'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', '')),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
-      }
-    }
-  }
-
   void _openCreatePost() {
     Navigator.of(context)
         .push(
@@ -413,6 +346,79 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     if (words.isEmpty || words.first.isEmpty) return '?';
     if (words.length == 1) return words.first.substring(0, 1).toUpperCase();
     return (words[0].substring(0, 1) + words[1].substring(0, 1)).toUpperCase();
+  }
+
+  Future<void> _handleEditPost(Map<String, dynamic> post) async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditPostScreen(
+          post: post,
+          communityId: widget.communityId,
+          communityName: _community?['community_name'] ?? 'Komunitas',
+        ),
+      ),
+    );
+    if (result != null) {
+      // Refresh posts setelah edit
+      await _loadPosts(reset: true);
+    }
+  }
+
+  Future<void> _handleDeletePost(int postId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Hapus Postingan',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Apakah Anda yakin ingin menghapus postingan ini?',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Batal', style: GoogleFonts.poppins()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text('Hapus', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Sesi tidak ditemukan')));
+      return;
+    }
+
+    try {
+      await _postsService.deletePost(token: token, postId: postId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Postingan berhasil dihapus'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      // Refresh posts
+      await _loadPosts(reset: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    }
   }
 
   @override
@@ -850,22 +856,20 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                   }
                   final post = _posts[index];
                   final postId = post['post_id'] as int;
-                  final isEvent =
-                      post['is_event'] == true || post['post_type'] == 'event';
 
                   return PostCardWidget(
                     post: post,
                     showCommunityInfo: false,
                     isLiked: _likedPostIds.contains(postId),
+                    isAuthor: post['author_id'] == _userId, // Anda perlu mendapatkan userId dari AuthProvider
+                    isAdmin: _canManage, // _isAdmin || _isFounder
                     onTap: () => _openPostDetail(post),
                     onLike: () => _handleLike(postId),
                     onComment: () => _openPostDetail(post),
-                    onRegisterEvent: isEvent && !post['is_participant']
-                        ? () => _handleRegisterEvent(postId)
-                        : null,
-                    onCancelEvent: isEvent && post['is_participant']
-                        ? () => _handleCancelEvent(postId)
-                        : null,
+                    onEdit: () => _handleEditPost(post),
+                    onDelete: () => _handleDeletePost(postId),
+                    onRegisterEvent: null,
+                    onCancelEvent: null,
                   );
                 }, childCount: _posts.length + (_hasMorePosts ? 1 : 0)),
               ),

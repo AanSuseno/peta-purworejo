@@ -29,6 +29,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isUpdatingProfile => _isUpdatingProfile;
   bool get isUploadingPhoto => _isUploadingPhoto;
   Map<String, dynamic>? get userData => _userData;
+  int? get userId => _userData?['user_id'] as int?;
 
   String get displayName => _userData?['full_name'] ?? 'No Name';
   String get email => _userData?['email'] ?? 'No Email';

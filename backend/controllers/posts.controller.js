@@ -1,14 +1,36 @@
 // controllers/posts.controller.js
+
 import prisma from "../lib/prisma.js";
 import fs from "fs";
 import path from "path";
 
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+// Format DateTime ke string waktu HH:MM
+const formatTimeToString = (dateTime) => {
+    if (!dateTime) return null;
+    try {
+        const date = new Date(dateTime);
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    } catch (error) {
+        return null;
+    }
+};
+
+// ============================================
+// GET COMMUNITY POSTS
+// ============================================
+
 export const getCommunityPosts = async (req, res) => {
     try {
         const { id } = req.params;
-        const { 
-            page = 1, 
-            limit = 10, 
+        const {
+            page = 1,
+            limit = 10,
             post_type,
             visibility,
             sort_by = 'created_at',
@@ -98,6 +120,10 @@ export const getCommunityPosts = async (req, res) => {
             comments_count: post._count.post_comments,
             participants_count: post._count.event_participants,
             is_event: post.post_type === 'event',
+            is_liked: false, // Default untuk list
+            is_participant: false, // Default untuk list
+            event_start_time: post.event_start_time, // Sudah string dari database
+            event_end_time: post.event_end_time, // Sudah string dari database
             _count: undefined
         }));
 
@@ -121,6 +147,10 @@ export const getCommunityPosts = async (req, res) => {
         });
     }
 };
+
+// ============================================
+// GET FEED POSTS
+// ============================================
 
 export const getFeedPosts = async (req, res) => {
     try {
@@ -214,6 +244,10 @@ export const getFeedPosts = async (req, res) => {
             comments_count: post._count.post_comments,
             participants_count: post._count.event_participants,
             is_event: post.post_type === 'event',
+            is_liked: false,
+            is_participant: false,
+            event_start_time: post.event_start_time,
+            event_end_time: post.event_end_time,
             _count: undefined
         }));
 
@@ -237,6 +271,10 @@ export const getFeedPosts = async (req, res) => {
         });
     }
 };
+
+// ============================================
+// GET POST BY ID
+// ============================================
 
 export const getPostById = async (req, res) => {
     try {
@@ -332,6 +370,8 @@ export const getPostById = async (req, res) => {
             is_participant: isParticipant,
             participant_status: participantStatus,
             is_event: post.post_type === 'event',
+            event_start_time: post.event_start_time,
+            event_end_time: post.event_end_time,
             _count: undefined,
             post_likes: undefined,
             event_participants: undefined
@@ -352,13 +392,17 @@ export const getPostById = async (req, res) => {
     }
 };
 
+// ============================================
+// CREATE POST
+// ============================================
+
 export const createPost = async (req, res) => {
     try {
         const { id } = req.params; // community_id
         const userId = req.user.id;
-        const { 
-            title, 
-            content, 
+        const {
+            title,
+            content,
             post_type = 'regular',
             visibility = 'public',
             // Event fields (optional)
@@ -442,6 +486,7 @@ export const createPost = async (req, res) => {
         // Tambahkan field event jika post_type = event
         if (post_type === 'event') {
             postData.event_date = event_date ? new Date(event_date) : null;
+            // SIMPAN SEBAGAI STRING (langsung dari request)
             postData.event_start_time = event_start_time || null;
             postData.event_end_time = event_end_time || null;
             postData.event_location = event_location || null;
@@ -487,6 +532,8 @@ export const createPost = async (req, res) => {
             comments_count: post._count.post_comments,
             participants_count: post._count.event_participants,
             is_event: post.post_type === 'event',
+            is_liked: false,
+            is_participant: false,
             _count: undefined
         };
 
@@ -506,13 +553,17 @@ export const createPost = async (req, res) => {
     }
 };
 
+// ============================================
+// CREATE POST WITH MEDIA
+// ============================================
+
 export const createPostWithMedia = async (req, res) => {
     try {
         const { id } = req.params; // community_id
         const userId = req.user.id;
-        const { 
-            title, 
-            content, 
+        const {
+            title,
+            content,
             post_type = 'regular',
             visibility = 'public',
             is_pinned = false,
@@ -597,6 +648,7 @@ export const createPostWithMedia = async (req, res) => {
         // Tambahkan field event jika post_type = event
         if (post_type === 'event') {
             postData.event_date = event_date ? new Date(event_date) : null;
+            // SIMPAN SEBAGAI STRING (langsung dari request)
             postData.event_start_time = event_start_time || null;
             postData.event_end_time = event_end_time || null;
             postData.event_location = event_location || null;
@@ -674,6 +726,8 @@ export const createPostWithMedia = async (req, res) => {
             comments_count: createdPost._count.post_comments,
             participants_count: createdPost._count.event_participants,
             is_event: createdPost.post_type === 'event',
+            is_liked: false,
+            is_participant: false,
             _count: undefined
         };
 
@@ -694,14 +748,18 @@ export const createPostWithMedia = async (req, res) => {
     }
 };
 
+// ============================================
+// UPDATE POST
+// ============================================
+
 export const updatePost = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { 
-            title, 
-            content, 
-            post_type, 
+        const {
+            title,
+            content,
+            post_type,
             visibility,
             is_pinned,
             // Event fields
@@ -733,7 +791,7 @@ export const updatePost = async (req, res) => {
         // Cek permission: author atau admin komunitas atau system admin
         const isAuthor = post.author_id === userId;
         const isSystemAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
-        
+
         let isCommunityAdmin = false;
         if (!isAuthor && !isSystemAdmin) {
             const admin = await prisma.community_admins.findFirst({
@@ -768,14 +826,26 @@ export const updatePost = async (req, res) => {
 
         // Update event fields jika post_type = event
         if (post_type === 'event' || post.post_type === 'event') {
+            let dateToUse = null;
+            
             if (event_date !== undefined) {
                 updateData.event_date = event_date ? new Date(event_date) : null;
             }
+            // SIMPAN SEBAGAI STRING
             if (event_start_time !== undefined) {
-                updateData.event_start_time = event_start_time || null;
+                if (event_start_time && dateToUse) {
+                    updateData.event_start_time = new Date(`${dateToUse}T${event_start_time}`);
+                } else {
+                    updateData.event_start_time = null;
+                }
             }
+
             if (event_end_time !== undefined) {
-                updateData.event_end_time = event_end_time || null;
+                if (event_end_time && dateToUse) {
+                    updateData.event_end_time = new Date(`${dateToUse}T${event_end_time}`);
+                } else {
+                    updateData.event_end_time = null;
+                }
             }
             if (event_location !== undefined) {
                 updateData.event_location = event_location || null;
@@ -857,6 +927,10 @@ export const updatePost = async (req, res) => {
     }
 };
 
+// ============================================
+// DELETE POST
+// ============================================
+
 export const deletePost = async (req, res) => {
     try {
         const { id } = req.params;
@@ -880,7 +954,7 @@ export const deletePost = async (req, res) => {
         // Cek permission
         const isAuthor = post.author_id === userId;
         const isSystemAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
-        
+
         let isCommunityAdmin = false;
         if (!isAuthor && !isSystemAdmin) {
             const admin = await prisma.community_admins.findFirst({
@@ -934,6 +1008,10 @@ export const deletePost = async (req, res) => {
         });
     }
 };
+
+// ============================================
+// TOGGLE LIKE POST
+// ============================================
 
 export const toggleLikePost = async (req, res) => {
     try {
@@ -1036,7 +1114,7 @@ export const registerForEvent = async (req, res) => {
         const userId = req.user.id;
 
         const post = await prisma.posts.findUnique({
-            where: { 
+            where: {
                 post_id: parseInt(id),
                 post_type: 'event'
             }
@@ -1214,7 +1292,7 @@ export const getEventParticipants = async (req, res) => {
         const take = parseInt(limit);
 
         const post = await prisma.posts.findUnique({
-            where: { 
+            where: {
                 post_id: parseInt(id),
                 post_type: 'event'
             }
@@ -1286,7 +1364,7 @@ export const updateParticipantStatus = async (req, res) => {
         const userId = req.user.id;
 
         const post = await prisma.posts.findUnique({
-            where: { 
+            where: {
                 post_id: parseInt(id),
                 post_type: 'event'
             }
@@ -1302,7 +1380,7 @@ export const updateParticipantStatus = async (req, res) => {
         // Cek apakah user adalah admin komunitas atau author event
         const isAuthor = post.author_id === userId;
         const isSystemAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
-        
+
         let isCommunityAdmin = false;
         if (!isAuthor && !isSystemAdmin) {
             const admin = await prisma.community_admins.findFirst({
@@ -1556,7 +1634,7 @@ export const updateComment = async (req, res) => {
         // Cek permission: author atau admin komunitas
         const isAuthor = comment.user_id === userId;
         const isSystemAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
-        
+
         let isCommunityAdmin = false;
         if (!isAuthor && !isSystemAdmin) {
             const admin = await prisma.community_admins.findFirst({
@@ -1631,7 +1709,7 @@ export const deleteComment = async (req, res) => {
         // Cek permission
         const isAuthor = comment.user_id === userId;
         const isSystemAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
-        
+
         let isCommunityAdmin = false;
         if (!isAuthor && !isSystemAdmin) {
             const admin = await prisma.community_admins.findFirst({
