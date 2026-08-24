@@ -176,14 +176,10 @@ export const mobileGoogleLogin = async (req, res) => {
   }
 };
 
-/// Endpoint baru: GET /auth/me
-/// Dipakai Flutter saat app dibuka untuk memvalidasi JWT yang tersimpan
-/// dan mengambil data profil terbaru, tanpa perlu login ulang ke Google.
-/// Pasang di belakang middleware `requireAuth` (lihat auth.middleware.js).
 export const getMe = async (req, res) => {
   try {
     const user = await prisma.users.findUnique({
-      where: { user_id: req.user.userId },
+      where: { user_id: req.user.id },
       include: { user_roles: true },
     });
 

@@ -11,19 +11,19 @@ class HomeScreen extends StatelessWidget {
     final auth = Provider.of<AuthProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Home'),
-        backgroundColor: Colors.blue.shade700,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await auth.logout();
-            },
-          ),
-        ],
-      ),
+      // appBar: AppBar(
+      //   title: const Text('Home'),
+      //   backgroundColor: Colors.blue.shade700,
+      //   foregroundColor: Colors.white,
+      //   actions: [
+      //     IconButton(
+      //       icon: const Icon(Icons.logout),
+      //       onPressed: () async {
+      //         await auth.logout();
+      //       },
+      //     ),
+      //   ],
+      // ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),

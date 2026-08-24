@@ -10,8 +10,6 @@ import 'event_screen.dart';
 import 'donation_screen.dart';
 import 'profile_screen.dart';
 
-/// Halaman utama setelah login: Beranda di kiri, Profil di kanan,
-/// 3 menu tengah diimprovisasi dari skema DB (Komunitas, Event, Donasi).
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
