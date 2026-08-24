@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 /// Dilempar khusus saat server menolak token (401/403) -> sesi memang habis.
 /// Beda dengan error jaringan (SocketException/TimeoutException) yang berarti
@@ -155,16 +157,48 @@ class AuthService {
     String token,
     File imageFile,
   ) async {
+    final uri = Uri.parse('$baseUrl$_usersPath/me/profile-picture/upload');
+
+    // Log sebelum request dikirim, biar kelihatan URL & file yang dipakai
+    // kalau ternyata request-nya sendiri tidak pernah sampai ke server.
+    debugPrint('[uploadProfilePicture] URL: $uri');
+    debugPrint('[uploadProfilePicture] File path: ${imageFile.path}');
+    debugPrint(
+      '[uploadProfilePicture] File exists: ${await imageFile.exists()}, '
+      'size: ${await imageFile.exists() ? await imageFile.length() : 'N/A'} bytes',
+    );
+
     try {
-      final uri = Uri.parse('$baseUrl$_usersPath/me/profile-picture/upload');
-      final request = http.MultipartRequest('PUT', uri)
+      // Paksa filename & content-type secara eksplisit, JANGAN andalkan
+      // tebakan otomatis dari path.basename(imageFile.path). Kalau path
+      // hasil crop tidak punya ekstensi yang jelas, backend (multer
+      // fileFilter) akan nolak dengan "Hanya file gambar yang diizinkan"
+      // walaupun isi filenya beneran gambar -- karena dia cek ekstensi
+      // dari nama file yang dikirim, bukan isi filenya.
+      final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      final request = http.MultipartRequest('POST', uri)
         ..headers['Authorization'] = 'Bearer $token'
         ..files.add(
-          await http.MultipartFile.fromPath('profile_picture', imageFile.path),
+          await http.MultipartFile.fromPath(
+            'profile_picture',
+            imageFile.path,
+            filename: fileName,
+            contentType: MediaType('image', 'jpeg'),
+          ),
         );
+
+      debugPrint('[uploadProfilePicture] Sending as filename: $fileName');
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
+
+      // Log status code + raw body SEBELUM di-parse, supaya kalau body-nya
+      // bukan JSON valid (mis. server balas HTML error / kosong), kita
+      // masih bisa lihat isinya di sini alih-alih cuma dapat FormatException.
+      debugPrint('[uploadProfilePicture] Status: ${response.statusCode}');
+      debugPrint('[uploadProfilePicture] Raw body: ${response.body}');
+
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
       if (response.statusCode == 200) {
@@ -182,8 +216,31 @@ class AuthService {
       throw Exception(
         data['message'] ?? 'Gagal mengupload foto (${response.statusCode})',
       );
-    } on http.ClientException {
+    } on http.ClientException catch (e) {
+      debugPrint('[uploadProfilePicture] ClientException: $e');
       throw Exception('Gagal terhubung ke server');
+    } on SocketException catch (e) {
+      // Device tidak bisa connect ke baseUrl sama sekali (beda jaringan,
+      // server mati, firewall, dsb).
+      debugPrint('[uploadProfilePicture] SocketException: $e');
+      throw Exception('Tidak bisa terhubung ke server ($baseUrl)');
+    } on TimeoutException catch (e) {
+      debugPrint('[uploadProfilePicture] TimeoutException: $e');
+      throw Exception('Server tidak merespon (timeout)');
+    } on FormatException catch (e) {
+      // response.body bukan JSON valid -> biasanya server balas HTML/teks
+      // polos (mis. halaman error 404/500 bawaan Express, bukan JSON).
+      debugPrint(
+        '[uploadProfilePicture] FormatException (body bukan JSON): $e',
+      );
+      throw Exception('Response server tidak valid, cek log body di atas');
+    } catch (e, stackTrace) {
+      // Tangkapan terakhir supaya error apa pun (mis. file tidak ditemukan,
+      // AuthException/ValidationException yang dilempar di atas) tetap
+      // ke-log sebelum di-rethrow, tapi tanpa dobel-bungkus pesannya.
+      debugPrint('[uploadProfilePicture] Unexpected error: $e');
+      debugPrint('[uploadProfilePicture] Stack trace: $stackTrace');
+      rethrow;
     }
   }
 }

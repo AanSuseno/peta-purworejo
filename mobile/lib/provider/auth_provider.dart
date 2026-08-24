@@ -34,6 +34,11 @@ class AuthProvider extends ChangeNotifier {
   String get email => _userData?['email'] ?? 'No Email';
   String? get photoUrl => _userData?['profile_picture'];
 
+  /// Token JWT yang tersimpan (dibaca dari secure storage). Dipakai layar
+  /// lain (mis. CommunityScreen) yang perlu memanggil endpoint sendiri
+  /// tanpa lewat method khusus di AuthProvider.
+  Future<String?> getToken() => _storage.readToken();
+
   AuthProvider() {
     _checkLoginStatus();
   }

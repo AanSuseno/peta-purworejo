@@ -22,7 +22,7 @@ import {
     isSystemAdmin,
     requireRole
 } from "../middlewares/auth.middleware.js";
-import { uploadProfilePicture } from "../middlewares/upload.middleware.js";
+import { uploadProfilePicture, handleUploadError } from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
 router.get("/", authenticate, isSystemAdmin, getAllUsers);
@@ -33,7 +33,7 @@ router.get("/me/profile", authenticate, getMyProfile);
 router.put("/me/profile", authenticate, updateMyProfile);
 router.put("/me/profile-picture", authenticate, updateMyProfilePicture);
 router.put("/me/password", authenticate, changePassword);
-router.post("/me/profile-picture/upload", authenticate, uploadProfilePicture, uploadMyProfilePicture);
+router.post("/me/profile-picture/upload", authenticate, uploadProfilePicture, handleUploadError, uploadMyProfilePicture);
 router.put("/me/profile-picture", authenticate, updateMyProfilePicture);
 router.get("/:id/communities", authenticate, getUserCommunities);
 router.get("/:id", authenticate, getUserById);

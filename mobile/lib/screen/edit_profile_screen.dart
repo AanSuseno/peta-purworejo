@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/auth_provider.dart';
@@ -71,7 +72,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'phone_number': _phoneCtrl.text.trim(),
       'bio': _bioCtrl.text.trim(),
       'kecamatan': _kecamatanCtrl.text.trim(),
-      'interests': _interestsWasList ? interestsList : _interestsCtrl.text.trim(),
+      'interests': _interestsWasList
+          ? interestsList
+          : _interestsCtrl.text.trim(),
     };
 
     try {
@@ -95,10 +98,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade600,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade600),
     );
   }
 
@@ -108,7 +108,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
         title: Text('Edit Profil', style: GoogleFonts.poppins()),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -168,7 +168,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               child: ElevatedButton(
                 onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade700,
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -198,7 +198,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               width: double.infinity,
               height: 52,
               child: OutlinedButton(
-                onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+                onPressed: _submitting
+                    ? null
+                    : () => Navigator.of(context).pop(),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Colors.grey.shade300),
                   shape: RoundedRectangleBorder(
@@ -278,12 +280,14 @@ class _StyledField extends StatelessWidget {
         ),
         prefixIcon: Padding(
           padding: EdgeInsets.only(bottom: maxLines > 1 ? 40 : 0),
-          child: Icon(icon, color: Colors.blue.shade700, size: 20),
+          child: Icon(icon, color: AppColors.primary, size: 20),
         ),
         filled: true,
         fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 16,
+          horizontal: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: Colors.grey.shade200),
@@ -294,7 +298,7 @@ class _StyledField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.blue.shade700, width: 1.6),
+          borderSide: BorderSide(color: AppColors.primary, width: 1.6),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),

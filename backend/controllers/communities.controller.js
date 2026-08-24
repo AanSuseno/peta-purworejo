@@ -3,6 +3,7 @@ import slugify from "slugify";
 
 export const getAllCommunities = async (req, res) => {
     try {
+        const userId = req.user.id;
         const {
             page = 1,
             limit = 10,
@@ -84,12 +85,30 @@ export const getAllCommunities = async (req, res) => {
             prisma.communities.count({ where })
         ]);
 
+        // Ambil komunitas mana saja (dari hasil di halaman ini) yang sudah
+        // diikuti user, biar app tidak perlu nebak-nebak status join sendiri
+        // dan tetap benar walau list di-refresh atau app dibuka ulang.
+        const communityIds = communities.map(c => c.community_id);
+        const myMemberships = communityIds.length > 0
+            ? await prisma.community_members.findMany({
+                where: {
+                    community_id: { in: communityIds },
+                    user_id: userId,
+                    status: 'active'
+                },
+                select: { community_id: true }
+            })
+            : [];
+        const joinedIds = new Set(myMemberships.map(m => m.community_id));
+
         const formattedCommunities = communities.map(community => ({
             ...community,
             member_count: community._count.community_members,
             post_count: community._count.posts,
             event_count: community._count.events,
-            _count: undefined
+            _count: undefined,
+            is_member: joinedIds.has(community.community_id),
+            is_founder: community.founder_id === userId
         }));
 
         return res.json({
@@ -367,6 +386,7 @@ export const getCommunityBySlug = async (req, res) => {
 
 export const searchCommunities = async (req, res) => {
     try {
+        const userId = req.user.id;
         const { q, category_id, kecamatan } = req.query;
 
         if (!q || q.trim() === '') {
@@ -422,10 +442,25 @@ export const searchCommunities = async (req, res) => {
             }
         });
 
+        const communityIds = communities.map(c => c.community_id);
+        const myMemberships = communityIds.length > 0
+            ? await prisma.community_members.findMany({
+                where: {
+                    community_id: { in: communityIds },
+                    user_id: userId,
+                    status: 'active'
+                },
+                select: { community_id: true }
+            })
+            : [];
+        const joinedIds = new Set(myMemberships.map(m => m.community_id));
+
         const formattedCommunities = communities.map(community => ({
             ...community,
             member_count: community._count.community_members,
-            _count: undefined
+            _count: undefined,
+            is_member: joinedIds.has(community.community_id),
+            is_founder: community.founder_id === userId
         }));
 
         return res.json({

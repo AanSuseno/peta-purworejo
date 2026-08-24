@@ -922,7 +922,7 @@ export const uploadMyProfilePicture = async (req, res) => {
         }
 
         // URL file yang diupload (relative path)
-        const fileUrl = `/uploads/${req.file.filename}`;
+        const fileUrl = `/uploads/profiles/${req.file.filename}`;
 
         // Update database
         const updatedUser = await prisma.users.update({

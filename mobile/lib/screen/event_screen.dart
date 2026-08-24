@@ -8,7 +8,7 @@ class EventScreen extends StatelessWidget {
     return Scaffold(
       // appBar: AppBar(
       //   title: const Text('Event'),
-      //   backgroundColor: Colors.blue.shade700,
+      //   backgroundColor: AppColors.primary,
       //   foregroundColor: Colors.white,
       // ),
       body: const Center(

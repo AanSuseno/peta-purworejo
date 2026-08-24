@@ -86,6 +86,25 @@ const uploadPostMedia = multer({
     fileFilter: postFileFilter
 });
 
+export const handleUploadError = (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        let message = "Upload gagal";
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            message = "Ukuran file terlalu besar";
+        } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+            message = "Field file tidak sesuai dengan yang diharapkan";
+        }
+        return res.status(400).json({ success: false, message });
+    }
+
+    if (err) {
+        // Error dari fileFilter, mis. "Hanya file gambar yang diizinkan..."
+        return res.status(400).json({ success: false, message: err.message });
+    }
+
+    next();
+};
+
 // Upload middleware
 const upload = multer({
     storage: storage,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/constants/colors.dart';
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
@@ -12,9 +13,9 @@ class SplashScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.blue.shade900,
-              Colors.blue.shade600,
-              Colors.blue.shade400,
+              AppColors.primaryDark,
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.8),
             ],
           ),
         ),

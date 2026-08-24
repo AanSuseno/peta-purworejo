@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/auth_provider.dart';
@@ -58,9 +59,9 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.blue.shade900,
-              Colors.blue.shade600,
-              Colors.blue.shade400,
+              AppColors.primaryDark,
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.8),
             ],
           ),
         ),

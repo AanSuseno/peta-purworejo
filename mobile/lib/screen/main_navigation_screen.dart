@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 import 'package:rolling_bottom_bar/rolling_bottom_bar.dart';
 import 'package:rolling_bottom_bar/rolling_bottom_bar_item.dart';
@@ -70,7 +71,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ),
               RollingBottomBarItem(Icons.person_rounded, label: 'Profil'),
             ],
-            activeItemColor: Colors.blue,
+            activeItemColor: AppColors.primary,
             enableIconRotation: true,
             onTap: _onTap,
           ),

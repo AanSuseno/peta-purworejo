@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/auth_provider.dart';
@@ -13,7 +14,7 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       // appBar: AppBar(
       //   title: const Text('Home'),
-      //   backgroundColor: Colors.blue.shade700,
+      //   backgroundColor: AppColors.primary,
       //   foregroundColor: Colors.white,
       //   actions: [
       //     IconButton(
@@ -36,9 +37,9 @@ class HomeScreen extends StatelessWidget {
                 backgroundImage: auth.photoUrl != null
                     ? NetworkImage(auth.photoUrl!)
                     : null,
-                backgroundColor: Colors.blue.shade100,
+                backgroundColor: AppColors.primary.withOpacity(0.2),
                 child: auth.photoUrl == null
-                    ? Icon(Icons.person, size: 70, color: Colors.blue.shade700)
+                    ? Icon(Icons.person, size: 70, color: AppColors.primary)
                     : null,
               ),
               const SizedBox(height: 30),
@@ -66,19 +67,19 @@ class HomeScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
+                  color: AppColors.secondary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.shade300),
+                  border: Border.all(color: AppColors.secondary),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green.shade700),
+                    Icon(Icons.check_circle, color: AppColors.secondary),
                     const SizedBox(width: 10),
                     Text(
                       'Signed in with Google',
                       style: TextStyle(
-                        color: Colors.green.shade700,
+                        color: AppColors.secondary,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
