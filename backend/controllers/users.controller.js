@@ -367,6 +367,7 @@ export const getMyProfile = async (req, res) => {
                                 community_id: true,
                                 community_name: true,
                                 community_slug: true,
+                                total_members: true,
                                 logo: true
                             }
                         }
@@ -397,6 +398,8 @@ export const getMyProfile = async (req, res) => {
                 }
             }
         });
+
+        console.log(user)
 
         if (!user) {
             return res.status(404).json({

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../provider/auth_provider.dart';
 import '../services/posts_service.dart';
 import '../widgets/post_card_widget.dart';
+import '../widgets/comment_section_widget.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final int postId;
@@ -26,6 +27,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final PostsService _service = PostsService();
   Map<String, dynamic>? _post;
   bool _isLoading = true;
+  bool _isLiking = false;
   String? _error;
 
   @override
@@ -69,15 +71,103 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _handleLike() async {
-    // ... implement like
+    if (_isLiking || _post == null) return;
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Sesi tidak ditemukan')));
+      return;
+    }
+
+    setState(() => _isLiking = true);
+
+    try {
+      final result = await _service.toggleLike(
+        token: token,
+        postId: widget.postId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _post!['is_liked'] = result['is_liked'] ?? false;
+        _post!['likes_count'] = result['total_likes'] ?? 0;
+        _isLiking = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLiking = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    }
   }
 
   Future<void> _handleRegister() async {
-    // ... implement register event
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Sesi tidak ditemukan')));
+      return;
+    }
+
+    try {
+      await _service.registerEvent(token: token, postId: widget.postId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Berhasil mendaftar event!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _loadPost();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    }
   }
 
   Future<void> _handleCancel() async {
-    // ... implement cancel event
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Sesi tidak ditemukan')));
+      return;
+    }
+
+    try {
+      await _service.cancelEventRegistration(
+        token: token,
+        postId: widget.postId,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Berhasil membatalkan pendaftaran'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      await _loadPost();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    }
   }
 
   @override
@@ -128,21 +218,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildPostDetail() {
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      children: [
-        PostCardWidget(
-          post: _post!,
-          showCommunityInfo: true,
-          isLiked: _post?['is_liked'] == true,
-          onTap: () {},
-          onLike: _handleLike,
-          onComment: () {},
-          onRegisterEvent: () => _handleRegister(),
-          onCancelEvent: () => _handleCancel(),
-        ),
-        // Comments section can be added here
-      ],
+      child: Column(
+        children: [
+          PostCardWidget(
+            post: _post!,
+            showCommunityInfo: true,
+            isLiked: _post?['is_liked'] == true,
+            isLiking: _isLiking,
+            onTap: () {},
+            onLike: _handleLike,
+            onComment: () {},
+            onRegisterEvent: _handleRegister,
+            onCancelEvent: _handleCancel,
+          ),
+          const SizedBox(height: 16),
+          // Comments Section
+          CommentSectionWidget(
+            postId: widget.postId,
+            communityId: widget.communityId,
+            onCommentAdded: _loadPost,
+          ),
+        ],
+      ),
     );
   }
 }

@@ -9,6 +9,7 @@ class PostCardWidget extends StatelessWidget {
   final Map<String, dynamic> post;
   final bool showCommunityInfo;
   final bool isLiked;
+  final bool? isLiking;
   final VoidCallback onTap;
   final VoidCallback onLike;
   final VoidCallback onComment;
@@ -20,6 +21,7 @@ class PostCardWidget extends StatelessWidget {
     required this.post,
     this.showCommunityInfo = true,
     required this.isLiked,
+    this.isLiking,
     required this.onTap,
     required this.onLike,
     required this.onComment,
@@ -93,6 +95,258 @@ class PostCardWidget extends StatelessWidget {
     }
   }
 
+  String timeAgo(String dateTimeStr) {
+    try {
+      final dateTime = DateTime.parse(dateTimeStr);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays > 7) {
+        return DateFormat('dd MMM yyyy').format(dateTime);
+      } else if (difference.inDays > 0) {
+        return '${difference.inDays} hari lalu';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours} jam lalu';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes} menit lalu';
+      } else {
+        return 'Baru saja';
+      }
+    } catch (_) {
+      return dateTimeStr;
+    }
+  }
+
+  Widget _buildMediaGallery(List<dynamic> mediaList) {
+    if (mediaList.isEmpty) return const SizedBox.shrink();
+
+    final mediaUrls = mediaList
+        .map((m) => _resolveUrl(m['media_url'] as String?))
+        .where((url) => url != null)
+        .toList();
+
+    if (mediaUrls.isEmpty) return const SizedBox.shrink();
+
+    final List<Map<String, String>> mediaItems = [];
+    for (int i = 0; i < mediaList.length; i++) {
+      final m = mediaList[i];
+      final url = _resolveUrl(m['media_url'] as String?);
+      if (url != null) {
+        final type = (m['media_type'] as String? ?? 'image').toLowerCase();
+        mediaItems.add({
+          'url': url,
+          'type': type,
+          'isCover': m['is_cover'] == true ? 'true' : 'false',
+        });
+      }
+    }
+
+    if (mediaItems.isEmpty) return const SizedBox.shrink();
+
+    final coverIndex = mediaItems.indexWhere((m) => m['isCover'] == 'true');
+    final sortedItems = [...mediaItems];
+    if (coverIndex > 0) {
+      final cover = sortedItems.removeAt(coverIndex);
+      sortedItems.insert(0, cover);
+    }
+
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        if (sortedItems.length == 1)
+          _buildSingleMedia(sortedItems[0])
+        else
+          _buildMultipleMedia(sortedItems),
+      ],
+    );
+  }
+
+  Widget _buildSingleMedia(Map<String, String> media) {
+    final isVideo = media['type'] == 'video';
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(0),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            isVideo
+                ? Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: Icon(
+                        Icons.play_circle_filled,
+                        size: 60,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                    ),
+                  )
+                : Image.network(
+                    media['url']!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey.shade200,
+                      child: const Icon(Icons.broken_image, color: Colors.grey),
+                    ),
+                  ),
+            if (isVideo)
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Video',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMultipleMedia(List<Map<String, String>> mediaItems) {
+    final count = mediaItems.length;
+    final first = mediaItems[0];
+    final remaining = mediaItems.sublist(1);
+
+    return Column(
+      children: [
+        // First media (full width)
+        ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(0)),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                first['type'] == 'video'
+                    ? Container(
+                        color: Colors.black,
+                        child: Center(
+                          child: Icon(
+                            Icons.play_circle_filled,
+                            size: 60,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      )
+                    : Image.network(
+                        first['url']!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey.shade200,
+                          child: const Icon(
+                            Icons.broken_image,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                if (count > 1)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '+$count',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        // Remaining media (grid horizontal)
+        if (remaining.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          SizedBox(
+            height: 80,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: remaining.length > 3 ? 3 : remaining.length,
+              itemBuilder: (context, index) {
+                final media = remaining[index];
+                return Container(
+                  width: 80,
+                  margin: EdgeInsets.only(
+                    left: index == 0 ? 0 : 2,
+                    right: index == 2 ? 0 : 2,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(0),
+                    child: media['type'] == 'video'
+                        ? Container(
+                            color: Colors.black,
+                            child: Center(
+                              child: Icon(
+                                Icons.play_circle_filled,
+                                size: 30,
+                                color: Colors.white.withOpacity(0.8),
+                              ),
+                            ),
+                          )
+                        : Image.network(
+                            media['url']!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey.shade200,
+                              child: const Icon(
+                                Icons.broken_image,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (remaining.length > 3)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, right: 4),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  '+${remaining.length - 3} lainnya',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = post['title'] ?? 'Tanpa Judul';
@@ -106,35 +360,6 @@ class PostCardWidget extends StatelessWidget {
     final likesCount = post['likes_count'] ?? 0;
     final commentsCount = post['comments_count'] ?? 0;
     final mediaList = post['post_media'] as List? ?? [];
-    final coverMedia = mediaList.firstWhere(
-      (m) => m['is_cover'] == true,
-      orElse: () => mediaList.isNotEmpty ? mediaList.first : null,
-    );
-    final coverUrl = coverMedia != null
-        ? _resolveUrl(coverMedia['media_url'] as String?)
-        : null;
-
-    String timeAgo(String dateTimeStr) {
-      try {
-        final dateTime = DateTime.parse(dateTimeStr);
-        final now = DateTime.now();
-        final difference = now.difference(dateTime);
-
-        if (difference.inDays > 7) {
-          return DateFormat('dd MMM yyyy').format(dateTime);
-        } else if (difference.inDays > 0) {
-          return '${difference.inDays} hari lalu';
-        } else if (difference.inHours > 0) {
-          return '${difference.inHours} jam lalu';
-        } else if (difference.inMinutes > 0) {
-          return '${difference.inMinutes} menit lalu';
-        } else {
-          return 'Baru saja';
-        }
-      } catch (_) {
-        return dateTimeStr;
-      }
-    }
 
     return GestureDetector(
       onTap: onTap,
@@ -306,26 +531,8 @@ class PostCardWidget extends StatelessWidget {
               ),
             ],
 
-            // Cover image
-            if (coverUrl != null) ...[
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(0),
-                ),
-                child: Image.network(
-                  coverUrl,
-                  height: 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 180,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.broken_image, color: Colors.grey),
-                  ),
-                ),
-              ),
-            ],
+            // Media Gallery
+            _buildMediaGallery(mediaList),
 
             // Event info (if event)
             if (isEvent) ...[
@@ -530,14 +737,27 @@ class PostCardWidget extends StatelessWidget {
                 children: [
                   // Like button
                   GestureDetector(
-                    onTap: onLike,
+                    onTap: isLiking == true ? null : onLike,
                     child: Row(
                       children: [
-                        Icon(
-                          isLiked ? Icons.favorite : Icons.favorite_border,
-                          size: 18,
-                          color: isLiked ? Colors.red : Colors.grey.shade500,
-                        ),
+                        isLiking == true
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.red,
+                                ),
+                              )
+                            : Icon(
+                                isLiked
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                size: 18,
+                                color: isLiked
+                                    ? Colors.red
+                                    : Colors.grey.shade500,
+                              ),
                         const SizedBox(width: 4),
                         Text(
                           '$likesCount',

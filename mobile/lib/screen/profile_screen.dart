@@ -14,18 +14,13 @@ import 'edit_profile_screen.dart';
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  // profile_picture dari backend berupa path relatif (mis. "/uploads/xxx.jpg"),
-  // jadi perlu digabung dengan base URL server untuk jadi URL gambar yang valid.
+  // profile_picture dari backend sudah berupa URL lengkap
   String? _resolveImageUrl(String? path) {
     if (path == null || path.isEmpty) return null;
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return path;
-    }
-    return '${AuthService.baseUrl}$path';
+    return path;
   }
 
-  // interests dari backend bisa berupa List atau String tergantung data,
-  // jadi ditangani dua-duanya biar tidak crash.
+  // interests dari backend bisa berupa null, String, atau List
   List<String> _formatInterests(dynamic interests) {
     if (interests == null) return [];
     if (interests is List) {
@@ -43,9 +38,7 @@ class ProfileScreen extends StatelessWidget {
         .toList();
   }
 
-  // Ubah ISO date string dari backend (mis. "2026-08-21T12:13:59.312Z")
-  // jadi format tanggal yang enak dibaca. withTime=true buat nampilin jam
-  // juga (dipakai di "Login Terakhir").
+  // Ubah ISO date string ke format tanggal yang enak dibaca
   String? _formatDate(String? iso, {bool withTime = false}) {
     if (iso == null || iso.isEmpty) return null;
     try {
@@ -75,13 +68,25 @@ class ProfileScreen extends StatelessWidget {
     }
   }
 
-  // Daftar komunitas user dari field "communities" pada response profil.
-  List<Map<String, dynamic>> _formatCommunities(dynamic communities) {
-    if (communities is! List) return [];
-    return communities
-        .whereType<Map>()
-        .map((e) => e.map((key, value) => MapEntry(key.toString(), value)))
-        .toList();
+  // Ambil komunitas yang dijoin dari community_members
+  List<Map<String, dynamic>> _getJoinedCommunities(Map<String, dynamic> user) {
+    final List<Map<String, dynamic>> joinedCommunities = [];
+
+    final members = user['community_members'] as List? ?? [];
+    for (var member in members) {
+      if (member is Map) {
+        final communityData = member['communities'] as Map?;
+        if (communityData != null) {
+          joinedCommunities.add({
+            ...communityData,
+            'join_date': member['join_date'],
+            'status': member['status'],
+          });
+        }
+      }
+    }
+
+    return joinedCommunities;
   }
 
   @override
@@ -102,7 +107,7 @@ class ProfileScreen extends StatelessWidget {
         builder: (context, auth, child) {
           final user = auth.userData;
 
-          // Belum ada data sama sekali (baru login / belum sempat di-fetch)
+          // Belum ada data sama sekali
           if (user == null) {
             if (auth.isLoading) {
               return const Center(child: CircularProgressIndicator());
@@ -110,15 +115,35 @@ class ProfileScreen extends StatelessWidget {
             return _buildEmptyState(context, auth);
           }
 
-          final fullName = (user['full_name'] as String?)?.trim();
-          final emailText = (user['email'] as String?)?.trim();
+          final fullName =
+              (user['full_name'] as String?)?.trim() ?? 'Tanpa Nama';
+          final emailText = (user['email'] as String?)?.trim() ?? '';
           final phone = (user['phone_number'] as String?)?.trim();
           final bio = (user['bio'] as String?)?.trim();
           final kecamatan = (user['kecamatan'] as String?)?.trim();
           final interests = _formatInterests(user['interests']);
           final imageUrl = _resolveImageUrl(user['profile_picture'] as String?);
           final joinedAt = _formatDate(user['created_at'] as String?);
-          final communities = _formatCommunities(user['communities']);
+          final lastLogin = _formatDate(
+            user['last_login'] as String?,
+            withTime: true,
+          );
+          final isVerified = user['is_verified'] == true;
+          final isActive = user['is_active'] == true;
+          final roleName =
+              (user['user_roles'] as Map?)?.containsKey('role_name') == true
+              ? (user['user_roles'] as Map)['role_name'] as String?
+              : null;
+
+          // Ambil komunitas yang dijoin
+          final joinedCommunities = _getJoinedCommunities(user);
+
+          // Statistik dari _count
+          final countData = user['_count'] as Map? ?? {};
+          final totalCommunities = countData['communities'] ?? 0;
+          final totalPosts = countData['posts'] ?? 0;
+          final totalDonations = countData['donations'] ?? 0;
+          final totalEvents = countData['event_participants'] ?? 0;
 
           final topInset = MediaQuery.of(context).padding.top;
 
@@ -138,8 +163,7 @@ class ProfileScreen extends StatelessWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                // Header gradient yang "naik" sampai ke belakang status bar,
-                // karena AppBar-nya transparan (extendBodyBehindAppBar: true).
+                // Header gradient
                 Container(
                   width: double.infinity,
                   padding: EdgeInsets.fromLTRB(
@@ -233,25 +257,78 @@ class ProfileScreen extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 14),
-                      Text(
-                        (fullName == null || fullName.isEmpty)
-                            ? 'Tanpa Nama'
-                            : fullName,
-                        style: GoogleFonts.poppins(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              fullName,
+                              style: GoogleFonts.poppins(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isVerified) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.verified, size: 18, color: Colors.white),
+                          ],
+                        ],
                       ),
-                      if (emailText != null && emailText.isNotEmpty)
+                      if (roleName != null && roleName.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              roleName,
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (emailText.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             emailText,
                             style: GoogleFonts.poppins(
                               fontSize: 13,
-                              color: AppColors.primary.withOpacity(0.15),
+                              color: Colors.white.withOpacity(0.85),
+                            ),
+                          ),
+                        ),
+                      if (!isActive)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'Akun Tidak Aktif',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
@@ -259,13 +336,55 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
                 Transform.translate(
-                  // Card ditarik naik supaya "menimpa" bagian bawah header
-                  // gradient, kesannya lebih menyatu (floating card style).
                   offset: const Offset(0, -28),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(
                       children: [
+                        // Statistik Card
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.06),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildStatItem(
+                                Icons.groups_outlined,
+                                totalCommunities.toString(),
+                                'Komunitas',
+                              ),
+                              _buildStatItem(
+                                Icons.article_outlined,
+                                totalPosts.toString(),
+                                'Postingan',
+                              ),
+                              _buildStatItem(
+                                Icons.volunteer_activism_outlined,
+                                totalDonations.toString(),
+                                'Donasi',
+                              ),
+                              _buildStatItem(
+                                Icons.event_available_outlined,
+                                totalEvents.toString(),
+                                'Event',
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Info Pribadi
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(4),
@@ -299,10 +418,26 @@ class ProfileScreen extends StatelessWidget {
                                 label: 'Bio',
                                 value: bio,
                               ),
+                              _divider(),
+                              _InfoTile(
+                                icon: Icons.calendar_today_outlined,
+                                label: 'Bergabung Sejak',
+                                value: joinedAt,
+                              ),
+                              if (lastLogin != null) ...[
+                                _divider(),
+                                _InfoTile(
+                                  icon: Icons.history_outlined,
+                                  label: 'Login Terakhir',
+                                  value: lastLogin,
+                                ),
+                              ],
                             ],
                           ),
                         ),
                         const SizedBox(height: 16),
+
+                        // Minat
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(18),
@@ -381,31 +516,8 @@ class ProfileScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            children: [
-                              _InfoTile(
-                                icon: Icons.calendar_today_outlined,
-                                label: 'Bergabung Sejak',
-                                value: joinedAt,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
+
+                        // Komunitas yang dijoin
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(18),
@@ -432,17 +544,38 @@ class ProfileScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    'Komunitas',
+                                    'Komunitas yang Diikuti',
                                     style: GoogleFonts.poppins(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.grey.shade700,
                                     ),
                                   ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(
+                                        0.15,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      joinedCommunities.length.toString(),
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              communities.isEmpty
+                              joinedCommunities.isEmpty
                                   ? Text(
                                       'Belum bergabung dengan komunitas',
                                       style: GoogleFonts.poppins(
@@ -455,12 +588,12 @@ class ProfileScreen extends StatelessWidget {
                                       children: [
                                         for (
                                           var i = 0;
-                                          i < communities.length;
+                                          i < joinedCommunities.length;
                                           i++
                                         ) ...[
                                           if (i > 0) const SizedBox(height: 10),
                                           _CommunityTile(
-                                            community: communities[i],
+                                            community: joinedCommunities[i],
                                           ),
                                         ],
                                       ],
@@ -469,6 +602,8 @@ class ProfileScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 24),
+
+                        // Tombol Edit Profil
                         SizedBox(
                           width: double.infinity,
                           height: 52,
@@ -499,6 +634,8 @@ class ProfileScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
+
+                        // Tombol Logout
                         SizedBox(
                           width: double.infinity,
                           height: 52,
@@ -538,13 +675,31 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildStatItem(IconData icon, String value, String label) {
+    return Column(
+      children: [
+        Icon(icon, size: 24, color: AppColors.primary),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        Text(
+          label,
+          style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade500),
+        ),
+      ],
+    );
+  }
+
   Widget _divider() =>
       Divider(height: 1, indent: 56, color: Colors.grey.shade100);
 
-  // Bottom sheet pilih sumber foto (kamera / galeri), lalu crop bulat,
-  // baru upload ke server. Loading state-nya ambil dari
-  // AuthProvider.isUploadingPhoto (bukan setState lokal) supaya UI avatar
-  // otomatis update lewat Consumer di atas.
+  // Bottom sheet pilih sumber foto
   Future<void> _handleChangePhoto(BuildContext context) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -593,7 +748,7 @@ class ProfileScreen extends StatelessWidget {
         source: source,
         imageQuality: 90,
       );
-      if (picked == null) return; // user batal
+      if (picked == null) return;
 
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
@@ -616,7 +771,7 @@ class ProfileScreen extends StatelessWidget {
           ),
         ],
       );
-      if (cropped == null) return; // user batal di layar crop
+      if (cropped == null) return;
 
       if (!context.mounted) return;
       await context.read<AuthProvider>().uploadProfilePicture(
