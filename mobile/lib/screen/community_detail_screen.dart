@@ -13,6 +13,7 @@ import 'edit_community_screen.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'edit_post_screen.dart';
+import '../widgets/community_donation_widget.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final int communityId;
@@ -292,21 +293,20 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
   void _openCreatePost() {
     Navigator.of(context)
         .push(
-          MaterialPageRoute(
-            builder: (_) => CreatePostScreen(
-              communityId: widget.communityId,
-              communityName:
-                  _community?['community_name'] ??
-                  widget.communityName ??
-                  'Komunitas',
-            ),
-          ),
-        )
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          communityId: widget.communityId,
+          communityName: _community?['community_name'] ??
+              widget.communityName ??
+              'Komunitas',
+        ),
+      ),
+    )
         .then((result) {
-          if (result == true) {
-            _loadPosts(reset: true);
-          }
-        });
+      if (result == true) {
+        _loadPosts(reset: true);
+      }
+    });
   }
 
   void _openPostDetail(Map<String, dynamic> post) {
@@ -521,9 +521,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                       child: CircleAvatar(
                         radius: 32,
                         backgroundColor: AppColors.primary.withOpacity(0.15),
-                        backgroundImage: logoUrl != null
-                            ? NetworkImage(logoUrl)
-                            : null,
+                        backgroundImage:
+                            logoUrl != null ? NetworkImage(logoUrl) : null,
                         child: logoUrl == null
                             ? Text(
                                 _initials(name),
@@ -774,10 +773,26 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
             ],
           ),
         ),
-        // Posts section
+        // Donasi & Campaign — ditampilkan sebagai banner ringkas di atas
+        // postingan, bukan daftar campaign penuh, supaya postingan tetap
+        // jadi konten utama yang langsung terlihat.
         if (_isMember) ...[
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+            sliver: SliverToBoxAdapter(
+              child: CommunityDonationWidget(
+                communityId: widget.communityId,
+                communityName: _community?['community_name'] as String? ??
+                    widget.communityName,
+                isMember: _isMember,
+                canManage: _canManage,
+              ),
+            ),
+          ),
+
+          // Posts section
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             sliver: SliverToBoxAdapter(
               child: Row(
                 children: [
@@ -861,7 +876,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                     post: post,
                     showCommunityInfo: false,
                     isLiked: _likedPostIds.contains(postId),
-                    isAuthor: post['author_id'] == _userId, // Anda perlu mendapatkan userId dari AuthProvider
+                    isAuthor: post['author_id'] ==
+                        _userId, // Anda perlu mendapatkan userId dari AuthProvider
                     isAdmin: _canManage, // _isAdmin || _isFounder
                     onTap: () => _openPostDetail(post),
                     onLike: () => _handleLike(postId),

@@ -24,7 +24,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   static const List<Widget> _screens = [
     HomeScreen(),
     CommunityScreen(),
-    EventScreen(),
+    // EventScreen(),
     DonationScreen(),
     ProfileScreen(),
   ];
@@ -64,7 +64,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             items: const [
               RollingBottomBarItem(Icons.home_rounded, label: 'Beranda'),
               RollingBottomBarItem(Icons.groups_rounded, label: 'Komunitas'),
-              RollingBottomBarItem(Icons.event_rounded, label: 'Event'),
+              // RollingBottomBarItem(Icons.event_rounded, label: 'Event'),
               RollingBottomBarItem(
                 Icons.volunteer_activism_rounded,
                 label: 'Donasi',

@@ -115,30 +115,35 @@ model community_members {
 }
 
 model donation_campaigns {
-  campaign_id             Int                       @id @default(autoincrement())
-  community_id            Int?
-  creator_id              Int
-  title                   String                    @db.VarChar(200)
-  description             String?
-  donation_type           donation_type_enum
-  target_amount           Decimal?                  @db.Decimal(15, 2)
-  collected_amount        Decimal                   @default(0) @db.Decimal(15, 2)
-  bank_account_info       String?
-  ewallet_info            String?
-  goods_description       String?
-  volunteer_needs         String?
-  volunteer_slots         Int?
-  volunteer_registered    Int                       @default(0)
-  start_date              DateTime?                 @db.Date
-  end_date                DateTime?                 @db.Date
-  status                  campaign_status_enum      @default(active)
-  total_donors            Int                       @default(0)
-  created_at              DateTime                  @default(now()) @db.Timestamp(6)
-  updated_at              DateTime                  @default(now()) @db.Timestamp(6)
-  communities             communities?              @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
-  users                   users                     @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  donations               donations[]
-  volunteer_registrations volunteer_registrations[]
+  campaign_id                                 Int                       @id @default(autoincrement())
+  community_id                                Int?
+  creator_id                                  Int
+  title                                       String                    @db.VarChar(200)
+  description                                 String?
+  donation_type                               donation_type_enum
+  target_amount                               Decimal?                  @db.Decimal(15, 2)
+  collected_amount                            Decimal                   @default(0) @db.Decimal(15, 2)
+  bank_account_info                           String?
+  ewallet_info                                String?
+  goods_description                           String?
+  volunteer_needs                             String?
+  volunteer_slots                             Int?
+  volunteer_registered                        Int                       @default(0)
+  start_date                                  DateTime?                 @db.Date
+  end_date                                    DateTime?                 @db.Date
+  status                                      campaign_status_enum      @default(active)
+  total_donors                                Int                       @default(0)
+  created_at                                  DateTime                  @default(now()) @db.Timestamp(6)
+  updated_at                                  DateTime                  @default(now()) @db.Timestamp(6)
+  approval_status                             String?                   @default("pending") @db.VarChar(20)
+  approved_by                                 Int?
+  approved_at                                 DateTime?                 @db.Timestamp(6)
+  rejection_reason                            String?
+  users_donation_campaigns_approved_byTousers users?                    @relation("donation_campaigns_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  communities                                 communities?              @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users                                       users                     @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  donations                                   donations[]
+  volunteer_registrations                     volunteer_registrations[]
 
   @@index([community_id], map: "idx_donation_campaigns_community_id")
   @@index([status], map: "idx_donation_campaigns_status")
@@ -371,40 +376,41 @@ model user_roles {
 }
 
 model users {
-  user_id                                               Int                       @id @default(autoincrement())
-  email                                                 String                    @unique @db.VarChar(100)
-  password_hash                                         String?                   @db.VarChar(255)
-  full_name                                             String                    @db.VarChar(100)
-  phone_number                                          String?                   @db.VarChar(20)
-  profile_picture                                       String?                   @db.VarChar(255)
-  bio                                                   String?
-  kecamatan                                             String?                   @db.VarChar(50)
-  interests                                             String?
-  role_id                                               Int
-  is_verified                                           Boolean                   @default(false)
-  is_active                                             Boolean                   @default(true)
-  last_login                                            DateTime?                 @db.Timestamp(6)
-  created_at                                            DateTime                  @default(now()) @db.Timestamp(6)
-  updated_at                                            DateTime                  @default(now()) @db.Timestamp(6)
-  google_id                                             String?                   @unique(map: "users_google_id_unique") @db.VarChar(255)
-  communities                                           communities[]
-  community_admins                                      community_admins[]
-  community_members                                     community_members[]
-  donation_campaigns                                    donation_campaigns[]
-  donations_donations_representation_verified_byTousers donations[]               @relation("donations_representation_verified_byTousers")
-  donations_donations_representative_idTousers          donations[]               @relation("donations_representative_idTousers")
-  event_participants                                    event_participants[]
-  notification_reads                                    notification_reads[]
-  notification_targets                                  notification_targets[]
-  notifications_notifications_created_byTousers         notifications[]           @relation("notifications_created_byTousers")
-  notifications_notifications_target_user_idTousers     notifications[]           @relation("notifications_target_user_idTousers")
-  post_comments                                         post_comments[]
-  post_likes                                            post_likes[]
-  posts                                                 posts[]
-  reports_reports_processed_byTousers                   reports[]                 @relation("reports_processed_byTousers")
-  reports_reports_reporter_idTousers                    reports[]                 @relation("reports_reporter_idTousers")
-  user_roles                                            user_roles                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
-  volunteer_registrations                               volunteer_registrations[]
+  user_id                                                  Int                       @id @default(autoincrement())
+  email                                                    String                    @unique @db.VarChar(100)
+  password_hash                                            String?                   @db.VarChar(255)
+  full_name                                                String                    @db.VarChar(100)
+  phone_number                                             String?                   @db.VarChar(20)
+  profile_picture                                          String?                   @db.VarChar(255)
+  bio                                                      String?
+  kecamatan                                                String?                   @db.VarChar(50)
+  interests                                                String?
+  role_id                                                  Int
+  is_verified                                              Boolean                   @default(false)
+  is_active                                                Boolean                   @default(true)
+  last_login                                               DateTime?                 @db.Timestamp(6)
+  created_at                                               DateTime                  @default(now()) @db.Timestamp(6)
+  updated_at                                               DateTime                  @default(now()) @db.Timestamp(6)
+  google_id                                                String?                   @unique(map: "users_google_id_unique") @db.VarChar(255)
+  communities                                              communities[]
+  community_admins                                         community_admins[]
+  community_members                                        community_members[]
+  donation_campaigns_donation_campaigns_approved_byTousers donation_campaigns[]      @relation("donation_campaigns_approved_byTousers")
+  donation_campaigns                                       donation_campaigns[]
+  donations_donations_representation_verified_byTousers    donations[]               @relation("donations_representation_verified_byTousers")
+  donations_donations_representative_idTousers             donations[]               @relation("donations_representative_idTousers")
+  event_participants                                       event_participants[]
+  notification_reads                                       notification_reads[]
+  notification_targets                                     notification_targets[]
+  notifications_notifications_created_byTousers            notifications[]           @relation("notifications_created_byTousers")
+  notifications_notifications_target_user_idTousers        notifications[]           @relation("notifications_target_user_idTousers")
+  post_comments                                            post_comments[]
+  post_likes                                               post_likes[]
+  posts                                                    posts[]
+  reports_reports_processed_byTousers                      reports[]                 @relation("reports_processed_byTousers")
+  reports_reports_reporter_idTousers                       reports[]                 @relation("reports_reporter_idTousers")
+  user_roles                                               user_roles                @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+  volunteer_registrations                                  volunteer_registrations[]
 
   @@index([kecamatan], map: "idx_users_kecamatan")
   @@index([role_id], map: "idx_users_role_id")
@@ -436,6 +442,7 @@ enum admin_role_enum {
 }
 
 enum campaign_status_enum {
+  pending
   active
   completed
   cancelled

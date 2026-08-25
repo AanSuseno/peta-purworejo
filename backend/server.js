@@ -12,6 +12,7 @@ import categoriesRoutes from "./routes/categories.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import communitiesRoutes from "./routes/communities.routes.js";
 import postsRoutes from "./routes/posts.routes.js";
+import donationRoutes from "./routes/donations.routes.js";
 
 // Import cleanup functions
 import { cleanupUnusedFiles, getFileStats } from "./utils/cleanup.js";
@@ -29,7 +30,8 @@ const uploadDir = path.join(__dirname, "uploads");
 const uploadDirs = [
     uploadDir,
     path.join(uploadDir, "profiles"),
-    path.join(uploadDir, "communities")
+    path.join(uploadDir, "communities"),
+    path.join(uploadDir, "donations")
 ];
 
 uploadDirs.forEach(dir => {
@@ -103,6 +105,7 @@ app.use("/categories", categoriesRoutes);
 app.use("/users", usersRoutes);
 app.use("/communities", communitiesRoutes);
 app.use("/posts", postsRoutes);
+app.use("/donations", donationRoutes);
 
 // Test upload
 app.get("/test-upload", (req, res) => {
