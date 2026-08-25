@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
+import 'dart:async';
+
 import '../provider/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {

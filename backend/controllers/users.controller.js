@@ -60,7 +60,6 @@ export const getAllUsers = async (req, res) => {
                             communities: true,
                             community_members: true,
                             posts: true,
-                            donations: true
                         }
                     }
                 },
@@ -392,7 +391,6 @@ export const getMyProfile = async (req, res) => {
                         communities: true,
                         community_members: true,
                         posts: true,
-                        donations: true,
                         event_participants: true
                     }
                 }
@@ -480,7 +478,6 @@ export const getUserById = async (req, res) => {
                         communities: true,
                         community_members: true,
                         posts: true,
-                        donations: true,
                         event_participants: true
                     }
                 }

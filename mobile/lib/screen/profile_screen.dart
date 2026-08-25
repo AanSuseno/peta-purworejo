@@ -11,13 +11,37 @@ import '../provider/auth_provider.dart';
 import '../services/auth_service.dart';
 import 'edit_profile_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  // profile_picture dari backend sudah berupa URL lengkap
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh profil begitu layar ini dibuka, jangan andalkan cache lama
+    // atau nunggu user pull-to-refresh manual. Pakai addPostFrameCallback
+    // supaya tidak trigger notifyListeners() di tengah proses build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AuthProvider>().refreshProfile().catchError((e) {
+        debugPrint('Gagal refresh profil saat buka layar: $e');
+      });
+    });
+  }
+
+  // profile_picture dari backend bisa berupa path relatif (mis.
+  // "/uploads/profiles/xxx.jpg") atau URL lengkap. Kalau relatif,
+  // gabungkan dengan baseUrl supaya NetworkImage bisa memuatnya.
   String? _resolveImageUrl(String? path) {
     if (path == null || path.isEmpty) return null;
-    return path;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    return '${AuthService.baseUrl}$path';
   }
 
   // interests dari backend bisa berupa null, String, atau List
@@ -132,8 +156,8 @@ class ProfileScreen extends StatelessWidget {
           final isActive = user['is_active'] == true;
           final roleName =
               (user['user_roles'] as Map?)?.containsKey('role_name') == true
-              ? (user['user_roles'] as Map)['role_name'] as String?
-              : null;
+                  ? (user['user_roles'] as Map)['role_name'] as String?
+                  : null;
 
           // Ambil komunitas yang dijoin
           final joinedCommunities = _getJoinedCommunities(user);
@@ -142,7 +166,6 @@ class ProfileScreen extends StatelessWidget {
           final countData = user['_count'] as Map? ?? {};
           final totalCommunities = countData['communities'] ?? 0;
           final totalPosts = countData['posts'] ?? 0;
-          final totalDonations = countData['donations'] ?? 0;
           final totalEvents = countData['event_participants'] ?? 0;
 
           final topInset = MediaQuery.of(context).padding.top;
@@ -198,6 +221,13 @@ class ProfileScreen extends StatelessWidget {
                               backgroundColor: Colors.white,
                               backgroundImage: imageUrl != null
                                   ? NetworkImage(imageUrl)
+                                  : null,
+                              onBackgroundImageError: imageUrl != null
+                                  ? (exception, stackTrace) {
+                                      debugPrint(
+                                        'Gagal load foto profil ($imageUrl): $exception',
+                                      );
+                                    }
                                   : null,
                               child: imageUrl == null
                                   ? Icon(
@@ -370,11 +400,6 @@ class ProfileScreen extends StatelessWidget {
                                 'Postingan',
                               ),
                               _buildStatItem(
-                                Icons.volunteer_activism_outlined,
-                                totalDonations.toString(),
-                                'Donasi',
-                              ),
-                              _buildStatItem(
                                 Icons.event_available_outlined,
                                 totalEvents.toString(),
                                 'Event',
@@ -491,9 +516,9 @@ class ProfileScreen extends StatelessWidget {
                                             (tag) => Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 6,
-                                                  ),
+                                                horizontal: 12,
+                                                vertical: 6,
+                                              ),
                                               decoration: BoxDecoration(
                                                 color: AppColors.primary
                                                     .withOpacity(0.15),
@@ -586,11 +611,9 @@ class ProfileScreen extends StatelessWidget {
                                     )
                                   : Column(
                                       children: [
-                                        for (
-                                          var i = 0;
-                                          i < joinedCommunities.length;
-                                          i++
-                                        ) ...[
+                                        for (var i = 0;
+                                            i < joinedCommunities.length;
+                                            i++) ...[
                                           if (i > 0) const SizedBox(height: 10),
                                           _CommunityTile(
                                             community: joinedCommunities[i],
@@ -775,8 +798,8 @@ class ProfileScreen extends StatelessWidget {
 
       if (!context.mounted) return;
       await context.read<AuthProvider>().uploadProfilePicture(
-        File(cropped.path),
-      );
+            File(cropped.path),
+          );
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
