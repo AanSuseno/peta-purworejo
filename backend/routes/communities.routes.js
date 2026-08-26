@@ -3,6 +3,7 @@ import express from "express";
 import {
     getAllCommunities,
     getCommunityById,
+    getCommunityMembers,
     createCommunity,
     updateCommunity,
     deleteCommunity,
@@ -33,6 +34,7 @@ const router = express.Router();
 // Public routes (butuh auth)
 router.get("/", authenticate, getAllCommunities);
 router.get("/:id", authenticate, getCommunityById);
+router.get("/:id/members", authenticate, getCommunityMembers);
 
 // Create community
 router.post("/", authenticate, createCommunity);

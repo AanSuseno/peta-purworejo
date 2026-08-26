@@ -798,8 +798,10 @@ export const getCommunityMembers = async (req, res) => {
         const { id } = req.params;
         const { page = 1, limit = 20, status = 'active' } = req.query;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const take = parseInt(limit);
+        // Pastikan page dan limit adalah integer
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(100, parseInt(limit) || 20);
+        const skip = (pageNum - 1) * limitNum;
 
         const community = await prisma.communities.findUnique({
             where: { community_id: parseInt(id) }
@@ -834,8 +836,8 @@ export const getCommunityMembers = async (req, res) => {
                 orderBy: {
                     join_date: 'desc'
                 },
-                skip,
-                take
+                skip: skip,
+                take: limitNum
             }),
             prisma.community_members.count({
                 where: {
@@ -845,22 +847,24 @@ export const getCommunityMembers = async (req, res) => {
             })
         ]);
 
+        console.log(`📊 [Members] Found ${members.length} members, total: ${total}, page: ${pageNum}, limit: ${limitNum}`);
+
         return res.json({
             success: true,
             data: members.map(m => ({
                 ...m,
-                user: m.users
+                user: m.users // Alias users ke user untuk konsistensi
             })),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                totalPages: Math.ceil(total / parseInt(limit))
+                page: pageNum,
+                limit: limitNum,
+                total: total,
+                totalPages: Math.ceil(total / limitNum)
             }
         });
 
     } catch (error) {
-        console.error("Get Community Members Error:", error);
+        console.error("❌ Get Community Members Error:", error);
         return res.status(500).json({
             success: false,
             message: "Gagal mengambil anggota komunitas",

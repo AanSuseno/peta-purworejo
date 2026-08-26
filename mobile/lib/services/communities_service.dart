@@ -49,8 +49,8 @@ class CommunitiesService {
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
     };
 
-    final uri = Uri.parse('$baseUrl$_path')
-        .replace(queryParameters: queryParams);
+    final uri =
+        Uri.parse('$baseUrl$_path').replace(queryParameters: queryParams);
 
     try {
       final response = await http.get(
@@ -523,4 +523,130 @@ class CommunitiesService {
       fieldName: 'banner',
     );
   }
+
+  /// GET /communities/:id/members — daftar anggota komunitas
+  Future<MemberPage> fetchCommunityMembers({
+    required String token,
+    required int communityId,
+    int page = 1,
+    int limit = 20,
+    String status = 'active',
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(), // Pastikan ini string
+      'limit': limit.toString(),
+      'status': status,
+    };
+
+    final uri = Uri.parse('$baseUrl$_path/$communityId/members')
+        .replace(queryParameters: queryParams);
+
+    debugPrint('🔍 [Members] Request URL: $uri');
+    debugPrint('🔍 [Members] Page: $page, Limit: $limit');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      debugPrint('📡 [Members] Status: ${response.statusCode}');
+
+      // Log response body untuk debugging
+      debugPrint('📡 [Members] Response body: ${response.body}');
+
+      // Cek apakah response adalah HTML
+      if (response.body.trim().startsWith('<')) {
+        debugPrint('❌ [Members] Response is HTML');
+        throw Exception(
+            'Server mengembalikan HTML (mungkin endpoint tidak ditemukan)');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        // Ambil data dari field 'data'
+        final rawList = data['data'] as List? ?? [];
+        final pagination = data['pagination'] as Map<String, dynamic>?;
+
+        // Log untuk debugging
+        debugPrint('✅ [Members] Raw data count: ${rawList.length}');
+        debugPrint(
+            '✅ [Members] Total from pagination: ${pagination?['total']}');
+        debugPrint('✅ [Members] Page from pagination: ${pagination?['page']}');
+        debugPrint('✅ [Members] TotalPages: ${pagination?['totalPages']}');
+
+        // Proses data members
+        final members = rawList.map((item) {
+          final member = Map<String, dynamic>.from(item);
+
+          // Pastikan field 'user' atau 'users' ada
+          if (member.containsKey('user')) {
+            // Sudah dalam format yang benar
+          } else if (member.containsKey('users')) {
+            // Ubah 'users' menjadi 'user' untuk konsistensi
+            member['user'] = member['users'];
+            member.remove('users');
+          }
+
+          return member;
+        }).toList();
+
+        return MemberPage(
+          members: members,
+          page: pagination?['page'] ?? page,
+          totalPages: pagination?['totalPages'] ?? 1,
+          total: pagination?['total'] ?? 0,
+        );
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ??
+              'Kamu tidak punya izin untuk melihat anggota komunitas ini',
+        );
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Komunitas tidak ditemukan');
+      }
+
+      throw Exception(
+        data['message'] ??
+            'Gagal memuat anggota komunitas (${response.statusCode})',
+      );
+    } on http.ClientException catch (e) {
+      debugPrint('❌ [Members] ClientException: $e');
+      throw Exception('Gagal terhubung ke server');
+    } on FormatException catch (e) {
+      debugPrint('❌ [Members] FormatException: $e');
+      throw Exception('Response server tidak valid');
+    } catch (e) {
+      debugPrint('❌ [Members] Unexpected error: $e');
+      rethrow;
+    }
+  }
+}
+
+class MemberPage {
+  final List<Map<String, dynamic>> members;
+  final int page;
+  final int totalPages;
+  final int total;
+
+  MemberPage({
+    required this.members,
+    required this.page,
+    required this.totalPages,
+    required this.total,
+  });
+
+  bool get hasMore => page < totalPages;
 }

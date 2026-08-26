@@ -36,7 +36,7 @@ router.put("/me/password", authenticate, changePassword);
 router.post("/me/profile-picture/upload", authenticate, uploadProfilePicture, handleUploadError, uploadMyProfilePicture);
 router.put("/me/profile-picture", authenticate, updateMyProfilePicture);
 router.get("/:id/communities", authenticate, getUserCommunities);
-router.get("/:id", authenticate, getUserById);
+router.get("/:id", getUserById);
 router.put("/:id", authenticate, isSystemAdmin, updateUserByAdmin);
 router.delete("/:id", authenticate, isSystemAdmin, deleteUserByAdmin);
 

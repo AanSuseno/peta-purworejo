@@ -15,6 +15,7 @@ import 'post_detail_screen.dart';
 import 'edit_post_screen.dart';
 import '../widgets/community_donation_widget.dart';
 import '../widgets/swipe_join_button.dart';
+import 'community_members_screen.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final int communityId;
@@ -69,6 +70,19 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     if (_scrollController.position.pixels >= threshold) {
       _loadPosts();
     }
+  }
+
+  void _openMembersList() {
+    final name =
+        (_community?['community_name'] as String?)?.trim() ?? 'Komunitas';
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CommunityMembersScreen(
+          communityId: widget.communityId,
+          communityName: name,
+        ),
+      ),
+    );
   }
 
   Future<void> _loadDetail() async {
@@ -623,9 +637,12 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: _StatItem(
-                              label: 'Anggota',
-                              value: '$memberCount',
+                            child: GestureDetector(
+                              onTap: () => _openMembersList(),
+                              child: _StatItem(
+                                label: 'Anggota',
+                                value: '$memberCount',
+                              ),
                             ),
                           ),
                           _statDivider(),

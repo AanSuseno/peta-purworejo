@@ -243,4 +243,60 @@ class AuthService {
       rethrow;
     }
   }
+
+// Tambahkan method ini di AuthService
+
+  /// GET /users/:id/profile — ambil profil user lain berdasarkan ID
+  Future<Map<String, dynamic>> fetchUserProfile(
+      String token, int userId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl$_usersPath/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      print("hasil $response");
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+
+        Map<String, dynamic>? userMap;
+        if (decoded is Map<String, dynamic>) {
+          if (decoded['user'] is Map<String, dynamic>) {
+            userMap = decoded['user'] as Map<String, dynamic>;
+          } else if (decoded['data'] is Map<String, dynamic>) {
+            userMap = decoded['data'] as Map<String, dynamic>;
+          } else if (decoded.containsKey('user_id') ||
+              decoded.containsKey('email')) {
+            userMap = decoded;
+          }
+        }
+
+        if (userMap == null) {
+          throw Exception('Format response profil tidak dikenali');
+        }
+
+        return userMap;
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'User tidak ditemukan');
+      }
+
+      throw Exception(
+        data['message'] ?? 'Gagal memuat profil user (${response.statusCode})',
+      );
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
 }

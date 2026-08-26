@@ -423,18 +423,9 @@ export const getMyProfile = async (req, res) => {
 
 // 📋 GET User by ID (Hanya untuk diri sendiri atau admin)
 export const getUserById = async (req, res) => {
+    console.log(req.params)
     try {
         const { id } = req.params;
-        const currentUserId = req.user.id;
-        const isAdmin = req.user.roleName?.toLowerCase() === 'system_admin';
-
-        // Cek apakah user mengakses dirinya sendiri atau admin
-        if (parseInt(id) !== currentUserId && !isAdmin) {
-            return res.status(403).json({
-                success: false,
-                message: "Anda tidak memiliki akses untuk melihat data user lain"
-            });
-        }
 
         const user = await prisma.users.findUnique({
             where: {
