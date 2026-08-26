@@ -739,4 +739,141 @@ class DonationService {
       throw Exception('Gagal terhubung ke server');
     }
   }
+
+  Future<void> deleteCampaign({
+    required String token,
+    required int campaignId,
+  }) async {
+    const tag = 'deleteCampaign';
+    _debugLog(tag, 'Deleting campaign ID: $campaignId');
+
+    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId');
+
+    try {
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Campaign deleted successfully');
+        return;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+            data['message'] ?? 'Anda tidak berhak menghapus campaign ini');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Campaign tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal menghapus campaign');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateCampaign({
+    required String token,
+    required int campaignId,
+    required String title,
+    required String description,
+    required String donationType,
+    double? targetAmount,
+    String? bankAccountInfo,
+    String? ewalletInfo,
+    String? goodsDescription,
+    String? volunteerNeeds,
+    int? volunteerSlots,
+    String? startDate,
+    String? endDate,
+  }) async {
+    const tag = 'updateCampaign';
+    _debugLog(tag, 'Updating campaign ID: $campaignId');
+
+    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId');
+
+    final body = <String, dynamic>{
+      'title': title.trim(),
+      'description': description.trim(),
+      'donation_type': donationType,
+    };
+
+    if (targetAmount != null && targetAmount > 0) {
+      body['target_amount'] = targetAmount;
+    }
+    if (bankAccountInfo != null && bankAccountInfo.isNotEmpty) {
+      body['bank_account_info'] = bankAccountInfo.trim();
+    }
+    if (ewalletInfo != null && ewalletInfo.isNotEmpty) {
+      body['ewallet_info'] = ewalletInfo.trim();
+    }
+    if (goodsDescription != null && goodsDescription.isNotEmpty) {
+      body['goods_description'] = goodsDescription.trim();
+    }
+    if (volunteerNeeds != null && volunteerNeeds.isNotEmpty) {
+      body['volunteer_needs'] = volunteerNeeds.trim();
+    }
+    if (volunteerSlots != null && volunteerSlots > 0) {
+      body['volunteer_slots'] = volunteerSlots;
+    }
+    if (startDate != null && startDate.isNotEmpty) {
+      body['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      body['end_date'] = endDate;
+    }
+
+    _debugLog(tag, 'Request body: ${jsonEncode(body)}');
+
+    try {
+      final response = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Campaign updated successfully');
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(data['message'] ??
+            'Anda tidak memiliki izin untuk mengupdate campaign ini');
+      }
+
+      if (response.statusCode == 400) {
+        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Campaign tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal mengupdate campaign');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
 }

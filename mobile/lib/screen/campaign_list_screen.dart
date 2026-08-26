@@ -10,6 +10,7 @@ import '../provider/auth_provider.dart';
 import '../services/donation_service.dart';
 import 'create_campaign_screen.dart';
 import 'campaign_detail_screen.dart';
+import 'edit_campaign_screen.dart';
 
 /// Halaman penuh untuk menampilkan seluruh campaign donasi milik satu
 /// komunitas. Sebelumnya daftar ini ditampilkan langsung (inline) di
@@ -97,9 +98,8 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
         showPending = false;
         break;
       case 'pending_approval':
-        // ✅ Untuk menampilkan campaign yang menunggu persetujuan
-        statusFilter = null; // Tidak filter status campaign
-        showPending = true; // Tampilkan semua approval_status termasuk pending
+        statusFilter = null;
+        showPending = true;
         break;
       case 'completed':
         statusFilter = 'completed';
@@ -158,11 +158,6 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
       ),
     )
         .then((result) {
-      // `result` bisa berupa `true` (fallback lama) atau Map berisi data
-      // campaign yang baru dibuat. Kalau berupa data campaign, langsung kita
-      // selipkan ke daftar lokal supaya pembuat campaign LANGSUNG melihat
-      // campaign-nya, tanpa menunggu approval admin/founder mempengaruhi
-      // apakah campaign itu ikut kembali dari server saat filter "Semua".
       if (result is Map<String, dynamic>) {
         setState(() {
           _campaigns.removeWhere(
@@ -191,6 +186,107 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
         _loadCampaigns(reset: true);
       }
     });
+  }
+
+  // ==================== EDIT & DELETE CAMPAIGN ====================
+
+  Future<void> _editCampaign(Map<String, dynamic> campaign) async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditCampaignScreen(
+          campaignId: campaign['campaign_id'] as int,
+          communityId: widget.communityId,
+          initialData: campaign,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _loadCampaigns(reset: true);
+    }
+  }
+
+  Future<void> _deleteCampaign(Map<String, dynamic> campaign) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Hapus Campaign',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Apakah Anda yakin ingin menghapus campaign "${campaign['title']}"?',
+          style: GoogleFonts.poppins(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      _showError('Sesi tidak ditemukan, silakan login ulang');
+      return;
+    }
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      await _service.deleteCampaign(
+        token: token,
+        campaignId: campaign['campaign_id'] as int,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Campaign berhasil dihapus')),
+      );
+
+      setState(() {
+        _campaigns.removeWhere(
+          (c) => c['campaign_id'] == campaign['campaign_id'],
+        );
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  bool _canManageCampaign(Map<String, dynamic> campaign) {
+    // Admin/founder komunitas bisa manage semua
+    if (widget.canManage) return true;
+
+    // Pembuat campaign bisa manage campaign sendiri
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.userId;
+    final creatorId = campaign['creator_id'] as int?;
+
+    if (currentUserId != null && creatorId == currentUserId) return true;
+
+    return false;
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
+      ),
+    );
   }
 
   @override
@@ -297,10 +393,13 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
                                 ),
                               );
                             }
+                            final campaign = _campaigns[index];
                             return _CampaignCard(
-                              campaign: _campaigns[index],
-                              onTap: () =>
-                                  _openCampaignDetail(_campaigns[index]),
+                              campaign: campaign,
+                              canManage: _canManageCampaign(campaign),
+                              onTap: () => _openCampaignDetail(campaign),
+                              onEdit: () => _editCampaign(campaign),
+                              onDelete: () => _deleteCampaign(campaign),
                             );
                           },
                           childCount: _campaigns.length + (_hasMore ? 1 : 0),
@@ -390,7 +489,6 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status badges
             Row(
               children: [
                 _buildShimmerBadge(width: 90),
@@ -401,14 +499,12 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            // Title
             Container(
               height: 18,
               width: double.infinity,
               color: Colors.grey.shade300,
             ),
             const SizedBox(height: 4),
-            // Description
             Container(
               height: 14,
               width: double.infinity,
@@ -421,7 +517,6 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
               color: Colors.grey.shade300,
             ),
             const SizedBox(height: 10),
-            // Progress bar (money type)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -455,7 +550,6 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            // Stats
             Row(
               children: [
                 _buildShimmerStatChip(width: 100),
@@ -619,10 +713,16 @@ int? _parseInt(dynamic value) {
 class _CampaignCard extends StatelessWidget {
   final Map<String, dynamic> campaign;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final bool canManage;
 
   const _CampaignCard({
     required this.campaign,
     required this.onTap,
+    this.onEdit,
+    this.onDelete,
+    this.canManage = false,
   });
 
   String _getApprovalStatusLabel(String? approvalStatus) {
@@ -731,67 +831,120 @@ class _CampaignCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ============ HEADER ROW dengan Menu 3 Titik ============
               Row(
                 children: [
-                  // ✅ Tampilkan status approval jika pending atau rejected
-                  if (isPending || isRejected)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getApprovalStatusColor(approvalStatus)
-                            .withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        _getApprovalStatusLabel(approvalStatus),
-                        style: GoogleFonts.poppins(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _getApprovalStatusColor(approvalStatus),
+                  // Badges di kiri
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (isPending || isRejected)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getApprovalStatusColor(approvalStatus)
+                                  .withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _getApprovalStatusLabel(approvalStatus),
+                              style: GoogleFonts.poppins(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: _getApprovalStatusColor(approvalStatus),
+                              ),
+                            ),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getStatusColor(status).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _getStatusLabel(status),
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: _getStatusColor(status),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  if (isPending || isRejected) const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(status).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getStatusLabel(status),
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: _getStatusColor(status),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getDonationTypeLabel(donationType),
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade700,
-                      ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _getDonationTypeLabel(donationType),
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                  // Menu 3 titik - hanya tampil jika user bisa manage
+                  if (canManage) ...[
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_vert,
+                        size: 20,
+                        color: Colors.grey.shade600,
+                      ),
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          onEdit?.call();
+                        } else if (value == 'delete') {
+                          onDelete?.call();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit_outlined, size: 18),
+                              SizedBox(width: 8),
+                              Text('Edit'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: Colors.red,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Hapus',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 8),
