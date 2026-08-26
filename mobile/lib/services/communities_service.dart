@@ -494,6 +494,182 @@ class CommunitiesService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> searchCommunityMembers({
+    required String token,
+    required int communityId,
+    required String query,
+  }) async {
+    final uri = Uri.parse(
+        '$baseUrl$_path/$communityId/members/search?q=${Uri.encodeComponent(query)}');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      // ⚠️ Tambahkan deklarasi data di sini
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        final rawList = data['data'] as List? ?? [];
+        return rawList
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
+      }
+
+      throw Exception('Gagal mencari member (${response.statusCode})');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
+  /// POST /communities/:id/admins — tambah admin baru
+  Future<void> addCommunityAdmin({
+    required String token,
+    required int communityId,
+    required int userId,
+    String role = 'admin',
+  }) async {
+    final uri = Uri.parse('$baseUrl$_path/$communityId/admins');
+
+    try {
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'user_id': userId,
+          'role': role,
+        }),
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) return;
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
+      }
+
+      if (response.statusCode == 400) {
+        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(
+            data['message'] ?? 'Komunitas atau user tidak ditemukan');
+      }
+
+      throw Exception(
+        data['message'] ?? 'Gagal menambah admin (${response.statusCode})',
+      );
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
+  /// DELETE /communities/:id/admins/:adminId — hapus admin
+  Future<void> removeCommunityAdmin({
+    required String token,
+    required int communityId,
+    required int adminId,
+  }) async {
+    final uri = Uri.parse('$baseUrl$_path/$communityId/admins/$adminId');
+
+    try {
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) return;
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Kamu tidak punya izin untuk melakukan ini',
+        );
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Admin tidak ditemukan');
+      }
+
+      throw Exception(
+        data['message'] ?? 'Gagal menghapus admin (${response.statusCode})',
+      );
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
+  /// GET /users/search?q=... — cari user berdasarkan nama/email
+  Future<List<Map<String, dynamic>>> searchUsers(
+    String token,
+    String query,
+  ) async {
+    final uri =
+        Uri.parse('$baseUrl/users/search?q=${Uri.encodeComponent(query)}');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final rawList = data['data'] as List? ?? [];
+        return rawList
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      throw Exception('Gagal mencari user (${response.statusCode})');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
   /// POST /communities/:id/logo (multipart, field "logo")
   Future<Map<String, dynamic>> uploadLogo(
     String token,

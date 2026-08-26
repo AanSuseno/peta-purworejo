@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../provider/auth_provider.dart';
 import '../services/donation_service.dart';
@@ -1143,15 +1144,316 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
               ),
             )
           : null,
-      body: _buildBody(),
+      body: _isLoading ? _buildShimmerLoading() : _buildBody(),
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  // ============ SHIMMER LOADING ============
+  Widget _buildShimmerLoading() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
+      enabled: true,
+      child: SingleChildScrollView(
+        padding:
+            EdgeInsets.only(bottom: 80 + MediaQuery.of(context).padding.bottom),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header shimmer
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Badges
+                  Row(
+                    children: [
+                      _buildShimmerBadge(width: 60),
+                      const SizedBox(width: 8),
+                      _buildShimmerBadge(width: 100),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Title
+                  Container(
+                    height: 26,
+                    width: double.infinity,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 6),
+                  // Community name
+                  Container(
+                    height: 16,
+                    width: 150,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 4),
+                  // Creator name
+                  Container(
+                    height: 16,
+                    width: 120,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 12),
+                  // Description (3 lines)
+                  Container(
+                    height: 14,
+                    width: double.infinity,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    height: 14,
+                    width: double.infinity,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    height: 14,
+                    width: 200,
+                    color: Colors.grey.shade300,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
 
+            // Approval actions shimmer (jika ada)
+            const SizedBox(height: 4),
+
+            // Progress / Stats shimmer
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 12,
+                            width: 60,
+                            color: Colors.grey.shade300,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            height: 22,
+                            width: 100,
+                            color: Colors.grey.shade300,
+                          ),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Container(
+                            height: 12,
+                            width: 40,
+                            color: Colors.grey.shade300,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            height: 18,
+                            width: 100,
+                            color: Colors.grey.shade300,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 6,
+                    width: double.infinity,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        height: 14,
+                        width: 80,
+                        color: Colors.grey.shade300,
+                      ),
+                      Container(
+                        height: 14,
+                        width: 60,
+                        color: Colors.grey.shade300,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Additional info shimmer
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 18,
+                    width: 140,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 12),
+                  // Info rows (4 items)
+                  ...List.generate(
+                      4,
+                      (index) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Container(
+                                  height: 18,
+                                  width: 18,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.grey,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        height: 12,
+                                        width: 60,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        height: 14,
+                                        width: 120,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Recent donations shimmer
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 18,
+                    width: 120,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 12),
+                  // Donation items (5 items)
+                  ...List.generate(
+                      4,
+                      (index) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              children: [
+                                Container(
+                                  height: 28,
+                                  width: 28,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.grey,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        height: 14,
+                                        width: 80 + (index % 2 == 0 ? 40 : 0),
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        height: 10,
+                                        width: 100,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  height: 14,
+                                  width: 70,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  height: 18,
+                                  width: 24,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerBadge({required double width}) {
+    return Container(
+      height: 24,
+      width: width,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade300,
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
+  // ============ BODY UTAMA ============
+  Widget _buildBody() {
     if (_error != null) {
       return _buildErrorState();
     }

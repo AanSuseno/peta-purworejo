@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../provider/auth_provider.dart';
 import '../services/auth_service.dart';
 import 'edit_profile_screen.dart';
+import 'community_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -617,6 +618,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           if (i > 0) const SizedBox(height: 10),
                                           _CommunityTile(
                                             community: joinedCommunities[i],
+                                            onTap: () {
+                                              final communityId =
+                                                  joinedCommunities[i]
+                                                      ['community_id'] as int?;
+                                              final communityName =
+                                                  joinedCommunities[i]
+                                                          ['community_name']
+                                                      as String?;
+                                              if (communityId != null) {
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        CommunityDetailScreen(
+                                                      communityId: communityId,
+                                                      communityName:
+                                                          communityName,
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            },
                                           ),
                                         ],
                                       ],
@@ -854,8 +876,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 class _CommunityTile extends StatelessWidget {
   final Map<String, dynamic> community;
+  final VoidCallback? onTap; // Tambahkan parameter onTap
 
-  const _CommunityTile({required this.community});
+  const _CommunityTile({
+    required this.community,
+    this.onTap,
+  });
 
   String? _resolveLogoUrl(String? path) {
     if (path == null || path.isEmpty) return null;
@@ -873,60 +899,70 @@ class _CommunityTile extends StatelessWidget {
     final isVerified = community['is_verified'] == true;
     final logoUrl = _resolveLogoUrl(community['logo'] as String?);
 
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F6FA),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.primary.withOpacity(0.15),
-            backgroundImage: logoUrl != null ? NetworkImage(logoUrl) : null,
-            child: logoUrl == null
-                ? Icon(Icons.groups, size: 18, color: AppColors.primary)
-                : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        name,
-                        style: GoogleFonts.poppins(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (isVerified) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.verified, size: 14, color: AppColors.primary),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  totalMembers != null
-                      ? '$totalMembers anggota'
-                      : 'Jumlah anggota tidak diketahui',
-                  style: GoogleFonts.poppins(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              ],
+    return InkWell(
+      onTap: onTap, // Panggil onTap saat diklik
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F6FA),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: AppColors.primary.withOpacity(0.15),
+              backgroundImage: logoUrl != null ? NetworkImage(logoUrl) : null,
+              child: logoUrl == null
+                  ? Icon(Icons.groups, size: 18, color: AppColors.primary)
+                  : null,
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isVerified) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.verified,
+                            size: 14, color: AppColors.primary),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    totalMembers != null
+                        ? '$totalMembers anggota'
+                        : 'Jumlah anggota tidak diketahui',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11.5,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Tambahkan icon panah untuk indikasi bisa diklik
+            Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: Colors.grey.shade400,
+            ),
+          ],
+        ),
       ),
     );
   }

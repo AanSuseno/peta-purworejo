@@ -130,6 +130,74 @@ export const getAllCommunities = async (req, res) => {
     }
 };
 
+// Tambahkan di communities.controller.js atau buat users.controller.js
+export const searchCommunityMembers = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { q } = req.query;
+        
+        if (!q || q.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: "Parameter pencarian 'q' wajib diisi"
+            });
+        }
+
+        // Cek komunitas ada
+        const community = await prisma.communities.findUnique({
+            where: { community_id: parseInt(id) }
+        });
+
+        if (!community) {
+            return res.status(404).json({
+                success: false,
+                message: "Komunitas tidak ditemukan"
+            });
+        }
+
+        // Cari member yang aktif dengan nama/email mengandung query
+        const members = await prisma.community_members.findMany({
+            where: {
+                community_id: parseInt(id),
+                status: 'active',
+                OR: [
+                    { users: { full_name: { contains: q.trim(), mode: 'insensitive' } } },
+                    { users: { email: { contains: q.trim(), mode: 'insensitive' } } }
+                ]
+            },
+            include: {
+                users: {
+                    select: {
+                        user_id: true,
+                        full_name: true,
+                        email: true,
+                        profile_picture: true,
+                        is_verified: true
+                    }
+                }
+            },
+            take: 20
+        });
+
+        return res.json({
+            success: true,
+            data: members.map(m => ({
+                ...m.users,
+                member_id: m.member_id,
+                join_date: m.join_date
+            })),
+            total: members.length
+        });
+    } catch (error) {
+        console.error("Search Community Members Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Gagal mencari member komunitas",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
 export const getCommunityById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -846,8 +914,6 @@ export const getCommunityMembers = async (req, res) => {
                 }
             })
         ]);
-
-        console.log(`📊 [Members] Found ${members.length} members, total: ${total}, page: ${pageNum}, limit: ${limitNum}`);
 
         return res.json({
             success: true,

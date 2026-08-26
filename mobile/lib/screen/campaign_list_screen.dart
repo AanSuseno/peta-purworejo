@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../provider/auth_provider.dart';
 import '../services/donation_service.dart';
@@ -222,100 +223,273 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
       body: RefreshIndicator(
         color: AppColors.primary,
         onRefresh: () => _loadCampaigns(reset: true),
-        child: CustomScrollView(
-          controller: _scrollController,
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              sliver: SliverToBoxAdapter(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _FilterChip(
-                        label: 'Semua',
-                        selected: _selectedFilter == 'all',
-                        onTap: () {
-                          setState(() => _selectedFilter = 'all');
-                          _loadCampaigns(reset: true);
-                        },
-                      ),
-                      _FilterChip(
-                        label: 'Aktif',
-                        selected: _selectedFilter == 'active',
-                        onTap: () {
-                          setState(() => _selectedFilter = 'active');
-                          _loadCampaigns(reset: true);
-                        },
-                      ),
-                      if (widget.canManage)
-                        _FilterChip(
-                          label: 'Menunggu Persetujuan',
-                          selected: _selectedFilter == 'pending_approval',
-                          onTap: () {
-                            setState(
-                                () => _selectedFilter = 'pending_approval');
-                            _loadCampaigns(reset: true);
-                          },
+        child: _isLoading
+            ? _buildShimmerLoading()
+            : CustomScrollView(
+                controller: _scrollController,
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    sliver: SliverToBoxAdapter(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _FilterChip(
+                              label: 'Semua',
+                              selected: _selectedFilter == 'all',
+                              onTap: () {
+                                setState(() => _selectedFilter = 'all');
+                                _loadCampaigns(reset: true);
+                              },
+                            ),
+                            _FilterChip(
+                              label: 'Aktif',
+                              selected: _selectedFilter == 'active',
+                              onTap: () {
+                                setState(() => _selectedFilter = 'active');
+                                _loadCampaigns(reset: true);
+                              },
+                            ),
+                            if (widget.canManage)
+                              _FilterChip(
+                                label: 'Menunggu Persetujuan',
+                                selected: _selectedFilter == 'pending_approval',
+                                onTap: () {
+                                  setState(() =>
+                                      _selectedFilter = 'pending_approval');
+                                  _loadCampaigns(reset: true);
+                                },
+                              ),
+                            _FilterChip(
+                              label: 'Selesai',
+                              selected: _selectedFilter == 'completed',
+                              onTap: () {
+                                setState(() => _selectedFilter = 'completed');
+                                _loadCampaigns(reset: true);
+                              },
+                            ),
+                          ],
                         ),
-                      _FilterChip(
-                        label: 'Selesai',
-                        selected: _selectedFilter == 'completed',
-                        onTap: () {
-                          setState(() => _selectedFilter = 'completed');
-                          _loadCampaigns(reset: true);
-                        },
                       ),
-                    ],
+                    ),
                   ),
+                  if (_error != null)
+                    SliverToBoxAdapter(child: _buildErrorState())
+                  else if (_campaigns.isEmpty)
+                    SliverToBoxAdapter(child: _buildEmptyState())
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            if (index >= _campaigns.length) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                ),
+                              );
+                            }
+                            return _CampaignCard(
+                              campaign: _campaigns[index],
+                              onTap: () =>
+                                  _openCampaignDetail(_campaigns[index]),
+                            );
+                          },
+                          childCount: _campaigns.length + (_hasMore ? 1 : 0),
+                        ),
+                      ),
+                    ),
+                  const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+                ],
+              ),
+      ),
+    );
+  }
+
+  // ============ SHIMMER LOADING ============
+  Widget _buildShimmerLoading() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
+      enabled: true,
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            sliver: SliverToBoxAdapter(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildShimmerFilterChip(width: 70),
+                    const SizedBox(width: 6),
+                    _buildShimmerFilterChip(width: 60),
+                    const SizedBox(width: 6),
+                    _buildShimmerFilterChip(width: 120),
+                    const SizedBox(width: 6),
+                    _buildShimmerFilterChip(width: 70),
+                  ],
                 ),
               ),
             ),
-            if (_isLoading)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 60),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              )
-            else if (_error != null)
-              SliverToBoxAdapter(child: _buildErrorState())
-            else if (_campaigns.isEmpty)
-              SliverToBoxAdapter(child: _buildEmptyState())
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      if (index >= _campaigns.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                        );
-                      }
-                      return _CampaignCard(
-                        campaign: _campaigns[index],
-                        onTap: () => _openCampaignDetail(_campaigns[index]),
-                      );
-                    },
-                    childCount: _campaigns.length + (_hasMore ? 1 : 0),
-                  ),
-                ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildShimmerCampaignCard(),
+                  );
+                },
+                childCount: 4,
               ),
-            const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+            ),
+          ),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShimmerFilterChip({required double width}) {
+    return Container(
+      height: 32,
+      width: width,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade300,
+        borderRadius: BorderRadius.circular(20),
+      ),
+    );
+  }
+
+  Widget _buildShimmerCampaignCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status badges
+            Row(
+              children: [
+                _buildShimmerBadge(width: 90),
+                const SizedBox(width: 6),
+                _buildShimmerBadge(width: 60),
+                const SizedBox(width: 6),
+                _buildShimmerBadge(width: 70),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Title
+            Container(
+              height: 18,
+              width: double.infinity,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 4),
+            // Description
+            Container(
+              height: 14,
+              width: double.infinity,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 4),
+            Container(
+              height: 14,
+              width: 200,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 10),
+            // Progress bar (money type)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      height: 16,
+                      width: 80,
+                      color: Colors.grey.shade300,
+                    ),
+                    Container(
+                      height: 14,
+                      width: 40,
+                      color: Colors.grey.shade300,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  height: 4,
+                  width: double.infinity,
+                  color: Colors.grey.shade300,
+                ),
+                const SizedBox(height: 2),
+                Container(
+                  height: 12,
+                  width: 100,
+                  color: Colors.grey.shade300,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Stats
+            Row(
+              children: [
+                _buildShimmerStatChip(width: 100),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
+  Widget _buildShimmerBadge({required double width}) {
+    return Container(
+      height: 22,
+      width: width,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade300,
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
+  Widget _buildShimmerStatChip({required double width}) {
+    return Container(
+      height: 26,
+      width: width,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade300,
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
+  // ============ ERROR & EMPTY STATE ============
   Widget _buildErrorState() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 60),

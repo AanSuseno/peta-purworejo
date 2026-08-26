@@ -16,7 +16,8 @@ import {
     uploadCommunityBanner,
     uploadCommunityMedia,
     deleteCommunityLogo,
-    deleteCommunityBanner
+    deleteCommunityBanner,
+    searchCommunityMembers
 } from "../controllers/communities.controller.js";
 import {
     authenticate,
@@ -35,6 +36,7 @@ const router = express.Router();
 router.get("/", authenticate, getAllCommunities);
 router.get("/:id", authenticate, getCommunityById);
 router.get("/:id/members", authenticate, getCommunityMembers);
+router.get("/:id/members/search", authenticate, isCommunityAdminOrFounder('id'), searchCommunityMembers);
 
 // Create community
 router.post("/", authenticate, createCommunity);
@@ -42,6 +44,7 @@ router.post("/", authenticate, createCommunity);
 // Update & Delete - butuh admin/founder
 router.put("/:id", authenticate, isCommunityAdminOrFounder('id'), updateCommunity);
 router.delete("/:id", authenticate, isCommunityAdminOrFounder('id'), deleteCommunity);
+
 
 // Join & Leave
 router.post("/:id/join", authenticate, joinCommunity);
