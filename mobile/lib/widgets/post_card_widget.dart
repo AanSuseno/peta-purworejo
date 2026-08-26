@@ -122,6 +122,26 @@ class PostCardWidget extends StatelessWidget {
     }
   }
 
+  // Fungsi untuk menampilkan gallery fullscreen
+  void _showFullScreenGallery(BuildContext context,
+      List<Map<String, String>> mediaItems, int initialIndex) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _FullScreenGallery(
+                mediaItems: mediaItems, initialIndex: initialIndex),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildMediaGallery(List<dynamic> mediaList) {
     if (mediaList.isEmpty) return const SizedBox.shrink();
 
@@ -162,56 +182,65 @@ class PostCardWidget extends StatelessWidget {
   Widget _buildSingleMedia(Map<String, String> media) {
     final isVideo = media['type'] == 'video';
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(0),
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            isVideo
-                ? Container(
-                    color: Colors.black,
-                    child: Center(
-                      child: Icon(
-                        Icons.play_circle_filled,
-                        size: 60,
-                        color: Colors.white.withOpacity(0.8),
+    return Builder(
+      builder: (context) => GestureDetector(
+        onTap: () {
+          // Tampilkan gallery ketika gambar diklik
+          _showFullScreenGallery(context, [media], 0);
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(0),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                isVideo
+                    ? Container(
+                        color: Colors.black,
+                        child: Center(
+                          child: Icon(
+                            Icons.play_circle_filled,
+                            size: 60,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      )
+                    : Image.network(
+                        media['url']!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.broken_image,
+                              color: Colors.grey),
+                        ),
+                      ),
+                if (isVideo)
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Video',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  )
-                : Image.network(
-                    media['url']!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: Colors.grey.shade200,
-                      child: const Icon(Icons.broken_image, color: Colors.grey),
-                    ),
                   ),
-            if (isVideo)
-              Positioned(
-                bottom: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'Video',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -224,94 +253,33 @@ class PostCardWidget extends StatelessWidget {
 
     return Column(
       children: [
-        // First media (full width)
-        ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(0)),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                first['type'] == 'video'
-                    ? Container(
-                        color: Colors.black,
-                        child: Center(
-                          child: Icon(
-                            Icons.play_circle_filled,
-                            size: 60,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
-                      )
-                    : Image.network(
-                        first['url']!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey.shade200,
-                          child: const Icon(
-                            Icons.broken_image,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                if (count > 1)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '+$count',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        // Remaining media (grid horizontal)
-        if (remaining.isNotEmpty) ...[
-          const SizedBox(height: 2),
-          SizedBox(
-            height: 80,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: remaining.length > 3 ? 3 : remaining.length,
-              itemBuilder: (context, index) {
-                final media = remaining[index];
-                return Container(
-                  width: 80,
-                  margin: EdgeInsets.only(
-                    left: index == 0 ? 0 : 2,
-                    right: index == 2 ? 0 : 2,
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(0),
-                    child: media['type'] == 'video'
+        // First media (full width) - bisa diklik
+        Builder(
+          builder: (context) => GestureDetector(
+            onTap: () {
+              _showFullScreenGallery(context, mediaItems, 0);
+            },
+            child: ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(0)),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    first['type'] == 'video'
                         ? Container(
                             color: Colors.black,
                             child: Center(
                               child: Icon(
                                 Icons.play_circle_filled,
-                                size: 30,
+                                size: 60,
                                 color: Colors.white.withOpacity(0.8),
                               ),
                             ),
                           )
                         : Image.network(
-                            media['url']!,
+                            first['url']!,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Container(
                               color: Colors.grey.shade200,
@@ -321,6 +289,82 @@ class PostCardWidget extends StatelessWidget {
                               ),
                             ),
                           ),
+                    if (count > 1)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '+$count',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Remaining media (grid horizontal) - masing-masing bisa diklik
+        if (remaining.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          SizedBox(
+            height: 80,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: remaining.length > 3 ? 3 : remaining.length,
+              itemBuilder: (context, index) {
+                final media = remaining[index];
+                return GestureDetector(
+                  onTap: () {
+                    _showFullScreenGallery(context, mediaItems,
+                        index + 1 // +1 karena index 0 adalah gambar pertama
+                        );
+                  },
+                  child: Container(
+                    width: 80,
+                    margin: EdgeInsets.only(
+                      left: index == 0 ? 0 : 2,
+                      right: index == 2 ? 0 : 2,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(0),
+                      child: media['type'] == 'video'
+                          ? Container(
+                              color: Colors.black,
+                              child: Center(
+                                child: Icon(
+                                  Icons.play_circle_filled,
+                                  size: 30,
+                                  color: Colors.white.withOpacity(0.8),
+                                ),
+                              ),
+                            )
+                          : Image.network(
+                              media['url']!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.grey.shade200,
+                                child: const Icon(
+                                  Icons.broken_image,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                    ),
                   ),
                 );
               },
@@ -360,12 +404,11 @@ class PostCardWidget extends StatelessWidget {
     final mediaList = post['post_media'] as List? ?? [];
 
     final postAuthorId = post['author_id'] as int?;
-    final isAuthorBool = isAuthor; // dari parameter
-    final isAdminBool = isAdmin; // dari parameter
+    final isAuthorBool = isAuthor;
+    final isAdminBool = isAdmin;
 
     final canManage = isAuthorBool || isAdminBool;
 
-    // Debug print
     if (kDebugMode) {
       print(
         '📝 Post ID: ${post['post_id']}, Author ID: $postAuthorId, isAuthor: $isAuthorBool, isAdmin: $isAdminBool, canManage: $canManage',
@@ -398,9 +441,8 @@ class PostCardWidget extends StatelessWidget {
                   CircleAvatar(
                     radius: 16,
                     backgroundColor: AppColors.primary.withOpacity(0.15),
-                    backgroundImage: authorPhoto != null
-                        ? NetworkImage(authorPhoto)
-                        : null,
+                    backgroundImage:
+                        authorPhoto != null ? NetworkImage(authorPhoto) : null,
                     child: authorPhoto == null
                         ? Text(
                             authorName.isNotEmpty
@@ -445,7 +487,6 @@ class PostCardWidget extends StatelessWidget {
                       color: Colors.grey.shade400,
                     ),
                   ),
-                  // Menu Edit & Hapus (hanya untuk author atau admin)
                   if (canManage) ...[
                     const SizedBox(width: 4),
                     PopupMenuButton<String>(
@@ -496,7 +537,7 @@ class PostCardWidget extends StatelessWidget {
               ),
             ),
 
-            // Badge event (tanpa informasi peserta)
+            // Badge event
             if (isEvent) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -592,7 +633,7 @@ class PostCardWidget extends StatelessWidget {
             // Media Gallery
             _buildMediaGallery(mediaList),
 
-            // Event info (tanpa peserta dan tombol daftar)
+            // Event info
             if (isEvent) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
@@ -655,7 +696,6 @@ class PostCardWidget extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Row(
                 children: [
-                  // Like button
                   GestureDetector(
                     onTap: isLiking == true ? null : onLike,
                     child: Row(
@@ -674,9 +714,8 @@ class PostCardWidget extends StatelessWidget {
                                     ? Icons.favorite
                                     : Icons.favorite_border,
                                 size: 18,
-                                color: isLiked
-                                    ? Colors.red
-                                    : Colors.grey.shade500,
+                                color:
+                                    isLiked ? Colors.red : Colors.grey.shade500,
                               ),
                         const SizedBox(width: 4),
                         Text(
@@ -690,7 +729,6 @@ class PostCardWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 20),
-                  // Comment button
                   GestureDetector(
                     onTap: onComment,
                     child: Row(
@@ -716,6 +754,142 @@ class PostCardWidget extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// Fullscreen Gallery Widget
+class _FullScreenGallery extends StatefulWidget {
+  final List<Map<String, String>> mediaItems;
+  final int initialIndex;
+
+  const _FullScreenGallery({
+    required this.mediaItems,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_FullScreenGallery> createState() => _FullScreenGalleryState();
+}
+
+class _FullScreenGalleryState extends State<_FullScreenGallery> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // PageView untuk swipe antar gambar
+          PageView.builder(
+            controller: _pageController,
+            itemCount: widget.mediaItems.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              final media = widget.mediaItems[index];
+              final isVideo = media['type'] == 'video';
+
+              return Center(
+                child: isVideo
+                    ? Container(
+                        color: Colors.black,
+                        child: Center(
+                          child: Icon(
+                            Icons.play_circle_filled,
+                            size: 80,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      )
+                    : InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 4.0,
+                        child: Image.network(
+                          media['url']!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: Colors.grey.shade800,
+                            child: const Icon(
+                              Icons.broken_image,
+                              color: Colors.grey,
+                              size: 50,
+                            ),
+                          ),
+                        ),
+                      ),
+              );
+            },
+          ),
+
+          // Indikator jumlah gambar
+          if (widget.mediaItems.length > 1)
+            Positioned(
+              top: 60,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_currentIndex + 1} / ${widget.mediaItems.length}',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Tombol close
+          Positioned(
+            top: 60,
+            right: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

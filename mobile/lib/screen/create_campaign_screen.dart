@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 
 import '../provider/auth_provider.dart';
 import '../services/donation_service.dart';
+import '../widgets/custom_text_field.dart';
 
 class CreateCampaignScreen extends StatefulWidget {
   final int communityId;
@@ -248,34 +249,37 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
               const SizedBox(height: 16),
 
               // Judul
-              _fieldLabel('Judul Campaign *'),
-              _textField(
+              CustomTextField(
                 controller: _titleController,
-                hint: 'Masukkan judul campaign donasi',
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Judul wajib diisi'
-                    : null,
+                hint: 'Masukkan judul',
+                label: 'Judul Campaign',
+                required: true,
+                maxLines: 1,
+                validator: (value) =>
+                    value?.isEmpty ?? true ? 'Wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
               // Deskripsi
-              _fieldLabel('Deskripsi *'),
-              _textField(
+              CustomTextField(
                 controller: _descriptionController,
                 hint: 'Jelaskan tujuan campaign donasi ini',
+                label: 'Deskripsi',
+                required: true,
                 maxLines: 4,
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Deskripsi wajib diisi'
-                    : null,
+                validator: (value) =>
+                    value?.isEmpty ?? true ? 'Deskripsi wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
               // Field spesifik donasi uang
               if (_donationType == 'money') ...[
-                _fieldLabel('Target Donasi (Rp) *'),
-                _textField(
+                CustomTextField(
                   controller: _targetAmountController,
                   hint: 'Masukkan target donasi',
+                  label: 'Target Donasi (Rp)',
+                  required: true,
+                  maxLines: 1,
                   keyboardType: TextInputType.number,
                   prefixText: 'Rp ',
                 ),

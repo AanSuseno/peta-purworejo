@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../provider/auth_provider.dart';
 import '../services/auth_service.dart';
 import '../services/communities_service.dart';
 import 'community_detail_screen.dart';
 import 'create_community_screen.dart';
+import '../widgets/swipe_join_button.dart';
 
 /// Halaman daftar komunitas: cari, scroll (infinite load), gabung/keluar.
 /// Status "sudah gabung atau belum" per komunitas diambil dari field
@@ -384,8 +386,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 
   Widget _buildBody() {
+    // 🔥 TIPU USER: Tampilkan shimmer kalo lagi loading
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildShimmerLoading();
     }
 
     if (_error != null) {
@@ -398,10 +401,6 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
     return ListView.separated(
       controller: _scrollController,
-      // Padding bawah sengaja dilebihkan (bukan cuma 24) supaya kartu
-      // komunitas paling bawah tidak ketutupan bottom navigation bar --
-      // 20 untuk jarak visual normal + tinggi bottom nav (~56) + safe
-      // area inset perangkat (notch/gesture bar di iPhone/Android baru).
       padding: EdgeInsets.fromLTRB(
         20,
         20,
@@ -435,6 +434,129 @@ class _CommunityScreenState extends State<CommunityScreen> {
           onTap: () => _openCommunityDetail(_communities[index]),
         );
       },
+    );
+  }
+
+  Widget _buildShimmerLoading() {
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        20 + kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom,
+      ),
+      children: [
+        // Kartu 1: full
+        _buildShimmerCard(),
+        const SizedBox(height: 14),
+        // Kartu 2: dengan deskripsi panjang
+        _buildShimmerCard(longDescription: true),
+        const SizedBox(height: 14),
+        // Kartu 3: tanpa deskripsi
+        _buildShimmerCard(noDescription: true),
+      ],
+    );
+  }
+
+  Widget _buildShimmerCard(
+      {bool longDescription = false, bool noDescription = false}) {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
+      enabled: true,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 96,
+              width: double.infinity,
+              color: Colors.grey.shade300,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Nama + verified badge
+                  Row(
+                    children: [
+                      Container(
+                        height: 18,
+                        width: 120 + (longDescription ? 30 : 0),
+                        color: Colors.grey.shade300,
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        height: 15,
+                        width: 15,
+                        decoration: const BoxDecoration(
+                          color: Colors.grey,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Tags
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      _buildShimmerTag(width: 80),
+                      _buildShimmerTag(width: 90),
+                      _buildShimmerTag(width: 70),
+                    ],
+                  ),
+                  if (!noDescription) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      height: 12,
+                      width: double.infinity,
+                      color: Colors.grey.shade300,
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 12,
+                      width: longDescription ? 250 : 150,
+                      color: Colors.grey.shade300,
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  // Tombol swipe
+                  Container(
+                    height: 44,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerTag({required double width}) {
+    return Container(
+      height: 20,
+      width: width,
+      color: Colors.grey.shade300,
     );
   }
 
@@ -496,7 +618,8 @@ class _CommunityCard extends StatelessWidget {
   final bool isJoined;
   final bool isPending;
   final VoidCallback onJoin;
-  final VoidCallback onLeave;
+  final VoidCallback
+      onLeave; // Tetap ada untuk keperluan internal tapi tidak ditampilkan
   final VoidCallback onTap;
 
   const _CommunityCard({
@@ -549,9 +672,6 @@ class _CommunityCard extends StatelessWidget {
           ),
         ],
       ),
-      // Seluruh kartu bisa diketuk untuk buka detail komunitas. Tombol
-      // Gabung/Keluar di dalamnya tetap berfungsi sendiri karena Flutter
-      // memilih widget target ketuk paling dalam (hit-test) lebih dulu.
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -559,8 +679,7 @@ class _CommunityCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Banner: pakai foto komunitas kalau ada, kalau tidak pakai
-              // gradasi warna brand (tanpa ikon) supaya tetap terasa "berisi".
+              // Banner
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -575,7 +694,6 @@ class _CommunityCard extends StatelessWidget {
                           )
                         : _bannerFallback(),
                   ),
-                  // Logo komunitas menumpuk di atas banner
                   Positioned(
                     left: 16,
                     bottom: -24,
@@ -588,9 +706,8 @@ class _CommunityCard extends StatelessWidget {
                       child: CircleAvatar(
                         radius: 27,
                         backgroundColor: Colors.white.withOpacity(0.9),
-                        backgroundImage: logoUrl != null
-                            ? NetworkImage(logoUrl)
-                            : null,
+                        backgroundImage:
+                            logoUrl != null ? NetworkImage(logoUrl) : null,
                         child: logoUrl == null
                             ? Text(
                                 _initials(name),
@@ -677,59 +794,13 @@ class _CommunityCard extends StatelessWidget {
                         ),
                       ),
                     ],
-                    // Tombol hanya muncul kalau belum bergabung. Kalau sudah,
-                    // tidak ada tombol sama sekali -- cukup label kecil di
-                    // samping nama komunitas (lihat _JoinedLabel di atas).
+                    // Tombol Gabung hanya muncul kalau belum bergabung
                     if (!isJoined) ...[
                       const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 40,
-                        child: ElevatedButton.icon(
-                          onPressed: isPending ? null : onJoin,
-                          icon: isPending
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.add, size: 16),
-                          label: Text(
-                            isPending ? 'Memproses...' : 'Gabung',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      // Tetap sediakan cara keluar, tapi kecil & tidak
-                      // berbentuk tombol besar -- teks tautan tipis di bawah.
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: isPending ? null : onLeave,
-                        child: Text(
-                          isPending ? 'Memproses...' : 'Keluar dari komunitas',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11.5,
-                            color: Colors.grey.shade400,
-                            decoration: TextDecoration.underline,
-                            decorationColor: Colors.grey.shade400,
-                          ),
-                        ),
-                      ),
+                      SwipeJoinButton(
+                        isPending: isPending,
+                        onSwipeComplete: onJoin,
+                      )
                     ],
                   ],
                 ),

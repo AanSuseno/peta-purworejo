@@ -14,6 +14,7 @@ import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'edit_post_screen.dart';
 import '../widgets/community_donation_widget.dart';
+import '../widgets/swipe_join_button.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final int communityId;
@@ -697,39 +698,9 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
 
                     // Tombol gabung / keluar
                     if (!_isMember) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton.icon(
-                          onPressed: _isJoinLeavePending ? null : _handleJoin,
-                          icon: _isJoinLeavePending
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.add, size: 16),
-                          label: Text(
-                            _isJoinLeavePending
-                                ? 'Memproses...'
-                                : 'Gabung Komunitas',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
+                      SwipeJoinButton(
+                        isPending: _isJoinLeavePending,
+                        onSwipeComplete: () => _handleJoin(),
                       ),
                       const SizedBox(height: 20),
                     ] else ...[

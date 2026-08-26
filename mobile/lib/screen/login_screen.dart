@@ -27,12 +27,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _checkBackendConnection() async {
     try {
-      final response = await http
-          .get(
-            Uri.parse('https://mewbojub67zl.shares.zrok.io/health'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(const Duration(seconds: 3));
+      final response = await http.get(
+        Uri.parse('https://gl49q0dkx0km.shares.zrok.io/health'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 3));
 
       if (mounted) {
         setState(() {
@@ -126,9 +124,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           _isBackendConnected
                               ? Icons.check_circle
                               : Icons.error_outline,
-                          color: _isBackendConnected
-                              ? Colors.green
-                              : Colors.red,
+                          color:
+                              _isBackendConnected ? Colors.green : Colors.red,
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -137,9 +134,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? 'Backend Connected'
                               : 'Backend Not Reachable',
                           style: TextStyle(
-                            color: _isBackendConnected
-                                ? Colors.green
-                                : Colors.red,
+                            color:
+                                _isBackendConnected ? Colors.green : Colors.red,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
