@@ -41,7 +41,7 @@ import {
     getPendingCampaigns,
     approveCampaign,
     rejectCampaign,
-} from "../controllers/donations.controller.js";
+} from "../controllers/donations/index.js";
 import {
     authenticate
 } from "../middlewares/auth.middleware.js";
