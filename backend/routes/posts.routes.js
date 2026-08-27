@@ -20,7 +20,7 @@ import {
     createComment,
     updateComment,
     deleteComment
-} from "../controllers/posts.controller.js";
+} from "../controllers/posts/index.js";
 import {
     authenticate
 } from "../middlewares/auth.middleware.js";
