@@ -1,7 +1,6 @@
 // routes/posts.routes.js
 import express from "express";
 import {
-    // Posts
     getCommunityPosts,
     getFeedPosts,
     getPostById,
@@ -10,12 +9,10 @@ import {
     updatePost,
     deletePost,
     toggleLikePost,
-    // Event Participants
     registerForEvent,
     cancelEventRegistration,
     getEventParticipants,
     updateParticipantStatus,
-    // Comments
     getCommentsByPost,
     createComment,
     updateComment,

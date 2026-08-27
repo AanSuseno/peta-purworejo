@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
-import '../provider/auth_provider.dart';
-import '../services/communities_service.dart';
-import '../services/auth_service.dart';
+import '../../provider/auth_provider.dart';
+import '../../services/communities_service.dart';
+import '../../services/auth_service.dart';
 
 class CommunityManageAdminsScreen extends StatefulWidget {
   final int communityId;

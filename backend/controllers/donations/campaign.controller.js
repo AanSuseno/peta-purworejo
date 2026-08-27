@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma.js";
-import {checkCommunityAdmin} from './helpers.js';
+import {checkCommunityAdmin, isSystemAdmin} from './helpers.js';
 
 export const getCampaigns = async (req, res) => {
     try {

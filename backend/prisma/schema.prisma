@@ -115,88 +115,64 @@ model community_members {
 }
 
 model donation_campaigns {
-  campaign_id                                 Int                       @id @default(autoincrement())
+  campaign_id                                 Int                  @id @default(autoincrement())
   community_id                                Int?
   creator_id                                  Int
-  title                                       String                    @db.VarChar(200)
+  title                                       String               @db.VarChar(200)
   description                                 String?
   donation_type                               donation_type_enum
-  target_amount                               Decimal?                  @db.Decimal(15, 2)
-  collected_amount                            Decimal                   @default(0) @db.Decimal(15, 2)
-  bank_account_info                           String?
-  ewallet_info                                String?
+  target_amount                               Decimal?             @db.Decimal(15, 2)
+  collected_amount                            Decimal              @default(0) @db.Decimal(15, 2)
+  payment_info                                String?
   goods_description                           String?
   volunteer_needs                             String?
   volunteer_slots                             Int?
-  volunteer_registered                        Int                       @default(0)
-  start_date                                  DateTime?                 @db.Date
-  end_date                                    DateTime?                 @db.Date
-  status                                      campaign_status_enum      @default(active)
-  total_donors                                Int                       @default(0)
-  created_at                                  DateTime                  @default(now()) @db.Timestamp(6)
-  updated_at                                  DateTime                  @default(now()) @db.Timestamp(6)
-  approval_status                             String?                   @default("pending") @db.VarChar(20)
+  start_date                                  DateTime?            @db.Date
+  end_date                                    DateTime?            @db.Date
+  status                                      campaign_status_enum @default(active)
+  total_donors                                Int                  @default(0)
+  approval_status                             String?              @default("pending") @db.VarChar(20)
   approved_by                                 Int?
-  approved_at                                 DateTime?                 @db.Timestamp(6)
+  approved_at                                 DateTime?            @db.Timestamp(6)
   rejection_reason                            String?
-  users_donation_campaigns_approved_byTousers users?                    @relation("donation_campaigns_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  communities                                 communities?              @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
-  users                                       users                     @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  created_at                                  DateTime             @default(now()) @db.Timestamp(6)
+  updated_at                                  DateTime             @default(now()) @db.Timestamp(6)
+  users_donation_campaigns_approved_byTousers users?               @relation("donation_campaigns_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  communities                                 communities?         @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users                                       users                @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   donations                                   donations[]
-  volunteer_registrations                     volunteer_registrations[]
 
   @@index([community_id], map: "idx_donation_campaigns_community_id")
   @@index([status], map: "idx_donation_campaigns_status")
 }
 
 model donations {
-  donation_id                                       Int                  @id @default(autoincrement())
-  campaign_id                                       Int
-  donor_id                                          Int?
-  donation_type                                     donation_type_enum
-  amount                                            Decimal?             @db.Decimal(15, 2)
-  payment_method                                    String?              @db.VarChar(50)
-  proof_image                                       String?              @db.VarChar(255)
-  goods_type                                        String?              @db.VarChar(50)
-  goods_name                                        String?              @db.VarChar(100)
-  goods_quantity                                    Int?
-  goods_unit                                        String?              @db.VarChar(20)
-  goods_photo                                       String?              @db.VarChar(255)
-  delivery_method                                   String?              @db.VarChar(50)
-  delivery_address                                  String?
-  volunteer_availability                            String?              @db.VarChar(50)
-  volunteer_skill                                   String?              @db.VarChar(100)
-  volunteer_notes                                   String?
-  donor_name                                        String?              @db.VarChar(100)
-  donor_phone                                       String?              @db.VarChar(20)
-  donor_email                                       String?              @db.VarChar(100)
-  is_anonymous                                      Boolean              @default(false)
-  is_verified                                       Boolean              @default(false)
-  status                                            donation_status_enum @default(pending)
-  confirmed_at                                      DateTime?            @db.Timestamp(6)
-  created_at                                        DateTime             @default(now()) @db.Timestamp(6)
-  community_id                                      Int
-  representative_id                                 Int?
-  representation_status                             String?              @default("authorized") @db.VarChar(20)
-  representation_notes                              String?
-  representation_verified_by                        Int?
-  representation_verified_at                        DateTime?            @db.Timestamp(6)
-  donation_purpose                                  String?              @db.VarChar(100)
-  community_approval_status                         String?              @default("pending") @db.VarChar(20)
-  community_approved_at                             DateTime?            @db.Timestamp(6)
-  donation_campaigns                                donation_campaigns   @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction)
-  communities                                       communities          @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_donations_community")
-  users_donations_donor_idTousers                   users?               @relation("donations_donor_idTousers", fields: [donor_id], references: [user_id], onUpdate: NoAction, map: "fk_donations_donor_id")
-  users_donations_representation_verified_byTousers users?               @relation("donations_representation_verified_byTousers", fields: [representation_verified_by], references: [user_id], onUpdate: NoAction, map: "fk_donations_rep_verified")
-  users_donations_representative_idTousers          users?               @relation("donations_representative_idTousers", fields: [representative_id], references: [user_id], onUpdate: NoAction, map: "fk_donations_representative")
+  donation_id                     Int                  @id @default(autoincrement())
+  campaign_id                     Int
+  community_id                    Int
+  donor_id                        Int?
+  donation_type                   donation_type_enum
+  amount                          Decimal?             @db.Decimal(15, 2)
+  proof_image                     String?              @db.VarChar(255)
+  goods_name                      String?              @db.VarChar(100)
+  goods_quantity                  Int?
+  goods_unit                      String?              @db.VarChar(20)
+  delivery_notes                  String?
+  donor_name                      String?              @db.VarChar(100)
+  donor_phone                     String?              @db.VarChar(20)
+  donor_email                     String?              @db.VarChar(100)
+  is_anonymous                    Boolean              @default(false)
+  status                          donation_status_enum @default(pending)
+  confirmed_at                    DateTime?            @db.Timestamp(6)
+  created_at                      DateTime             @default(now()) @db.Timestamp(6)
+  donation_campaigns              donation_campaigns   @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction)
+  communities                     communities          @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_donations_community")
+  users_donations_donor_idTousers users?               @relation("donations_donor_idTousers", fields: [donor_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_donations_donor_id")
 
   @@index([campaign_id], map: "idx_donations_campaign_id")
   @@index([donor_id], map: "idx_donations_donor_id")
   @@index([status], map: "idx_donations_status")
   @@index([community_id], map: "idx_donations_community_id")
-  @@index([representation_status], map: "idx_donations_rep_status")
-  @@index([representation_verified_by], map: "idx_donations_rep_verified")
-  @@index([representative_id], map: "idx_donations_representative_id")
 }
 
 model event_participants {
@@ -399,8 +375,6 @@ model users {
   donation_campaigns_donation_campaigns_approved_byTousers donation_campaigns[]      @relation("donation_campaigns_approved_byTousers")
   donation_campaigns                                       donation_campaigns[]
   donations_donations_donor_idTousers                      donations[]               @relation("donations_donor_idTousers")
-  donations_donations_representation_verified_byTousers    donations[]               @relation("donations_representation_verified_byTousers")
-  donations_donations_representative_idTousers             donations[]               @relation("donations_representative_idTousers")
   event_participants                                       event_participants[]
   notification_reads                                       notification_reads[]
   notification_targets                                     notification_targets[]
@@ -419,20 +393,19 @@ model users {
 }
 
 model volunteer_registrations {
-  registration_id    Int                   @id @default(autoincrement())
-  campaign_id        Int
-  user_id            Int
-  availability       String?               @db.VarChar(50)
-  skills             String?
-  experience         String?
-  notes              String?
-  status             volunteer_status_enum @default(pending)
-  assigned_task      String?
-  confirmed_at       DateTime?             @db.Timestamp(6)
-  completed_at       DateTime?             @db.Timestamp(6)
-  created_at         DateTime              @default(now()) @db.Timestamp(6)
-  donation_campaigns donation_campaigns    @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction)
-  users              users                 @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  registration_id Int                   @id @default(autoincrement())
+  campaign_id     Int
+  user_id         Int
+  availability    String?               @db.VarChar(50)
+  skills          String?
+  experience      String?
+  notes           String?
+  status          volunteer_status_enum @default(pending)
+  assigned_task   String?
+  confirmed_at    DateTime?             @db.Timestamp(6)
+  completed_at    DateTime?             @db.Timestamp(6)
+  created_at      DateTime              @default(now()) @db.Timestamp(6)
+  users           users                 @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([campaign_id, user_id])
   @@index([campaign_id], map: "idx_volunteer_registrations_campaign_id")

@@ -28,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkBackendConnection() async {
     try {
       final response = await http.get(
-        Uri.parse('https://gl49q0dkx0km.shares.zrok.io/health'),
+        Uri.parse('https://uk6npnwu311q.shares.zrok.io/health'),
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 3));
 

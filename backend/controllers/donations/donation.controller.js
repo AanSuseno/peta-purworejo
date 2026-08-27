@@ -26,6 +26,13 @@ export const createDonation = async (req, res) => {
 
     const campaignId = parseInt(id);
 
+    console.log('🔍 ========== CREATE DONATION ==========');
+    console.log('📝 Body:', req.body);
+    console.log('📸 File:', req.file); // ← HARUSNYA ADA
+    console.log('📸 File fieldname:', req.file?.fieldname);
+    console.log('📸 File path:', req.file?.path);
+    console.log('========================================');
+
     // Cek campaign exists dan aktif
     const campaign = await prisma.donation_campaigns.findUnique({
       where: { campaign_id: campaignId }
@@ -36,9 +43,9 @@ export const createDonation = async (req, res) => {
     }
 
     if (campaign.status !== 'active' || campaign.approval_status !== 'approved') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Campaign is not active or not approved yet' 
+      return res.status(400).json({
+        success: false,
+        message: 'Campaign is not active or not approved yet'
       });
     }
 
@@ -50,41 +57,52 @@ export const createDonation = async (req, res) => {
     // Validasi berdasarkan tipe donasi
     if (donation_type === 'money') {
       if (!amount || amount <= 0) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Amount is required and must be greater than 0' 
+        return res.status(400).json({
+          success: false,
+          message: 'Amount is required and must be greater than 0'
         });
       }
     }
 
     if (donation_type === 'goods') {
       if (!goods_name || !goods_quantity) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Goods name and quantity are required' 
+        return res.status(400).json({
+          success: false,
+          message: 'Goods name and quantity are required'
         });
       }
     }
 
     if (donation_type === 'volunteer') {
       if (!volunteer_availability) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Volunteer availability is required' 
+        return res.status(400).json({
+          success: false,
+          message: 'Volunteer availability is required'
         });
       }
       // Cek kuota volunteer
-      if (campaign.volunteer_slots && 
-          campaign.volunteer_registered >= campaign.volunteer_slots) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Volunteer slots are full' 
+      if (campaign.volunteer_slots &&
+        campaign.volunteer_registered >= campaign.volunteer_slots) {
+        return res.status(400).json({
+          success: false,
+          message: 'Volunteer slots are full'
         });
       }
     }
 
+    const isAnonymousBool = is_anonymous === true || is_anonymous === 'true';
+
     // Gunakan community_id dari campaign jika tidak disediakan
-    const finalCommunityId = community_id || campaign.community_id;
+    const finalCommunityId = community_id ? parseInt(community_id) : campaign.community_id;
+
+    const community = await prisma.communities.findUnique({
+      where: { community_id: finalCommunityId },
+      select: { founder_id: true }
+    });
+
+    const representativeId = req.body.representative_id
+      ? parseInt(req.body.representative_id)
+      : community?.founder_id || null;
 
     // File upload handling
     let proof_image = null;
@@ -96,7 +114,6 @@ export const createDonation = async (req, res) => {
         goods_photo = req.file.path;
       }
     }
-
     // Buat donasi
     const donation = await prisma.donations.create({
       data: {
@@ -119,10 +136,11 @@ export const createDonation = async (req, res) => {
         donor_name: is_anonymous ? 'Anonymous' : (donor_name || req.user?.full_name),
         donor_phone: is_anonymous ? null : (donor_phone || req.user?.phone_number),
         donor_email: is_anonymous ? null : (donor_email || req.user?.email),
-        is_anonymous: is_anonymous || false,
+        is_anonymous: isAnonymousBool,
         is_verified: false,
         status: 'pending',
         community_id: finalCommunityId,
+        representative_id: representativeId,
         donation_purpose: donation_purpose || 'donation'
       },
       include: {
@@ -140,7 +158,7 @@ export const createDonation = async (req, res) => {
       await prisma.volunteer_registrations.create({
         data: {
           campaign_id: campaignId,
-          user_id: req.user.user_id,
+          user_id: req.user.id,
           availability: volunteer_availability,
           skills: volunteer_skill,
           notes: volunteer_notes,
@@ -181,18 +199,6 @@ export const createDonation = async (req, res) => {
       });
     }
 
-    // Create notification untuk community admin
-    if (finalCommunityId) {
-      await createNotification({
-        type: 'new_donation',
-        title: 'New Donation Received',
-        content: `New ${donation_type} donation for campaign "${campaign.title}"`,
-        target_community_id: finalCommunityId,
-        target_role: 'admin',
-        created_by: req.user?.user_id || null
-      });
-    }
-
     res.status(201).json({
       success: true,
       data: donation,
@@ -206,317 +212,317 @@ export const createDonation = async (req, res) => {
 
 // GET My Donations
 export const getMyDonations = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const { page = 1, limit = 10, status, donation_type } = req.query;
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 10, status, donation_type } = req.query;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const take = parseInt(limit);
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = parseInt(limit);
 
-        const where = {
-            donor_id: userId
-        };
+    const where = {
+      donor_id: userId
+    };
 
-        if (status) where.status = status;
-        if (donation_type) where.donation_type = donation_type;
+    if (status) where.status = status;
+    if (donation_type) where.donation_type = donation_type;
 
-        const [donations, total] = await Promise.all([
-            prisma.donations.findMany({
-                where,
-                include: {
-                    donation_campaigns: {
-                        select: {
-                            title: true,
-                            donation_type: true,
-                            communities: {
-                                select: {
-                                    community_name: true,
-                                    community_slug: true
-                                }
-                            }
-                        }
-                    },
-                    communities: {
-                        select: {
-                            community_id: true,
-                            community_name: true,
-                            community_slug: true
-                        }
-                    }
-                },
-                orderBy: {
-                    created_at: 'desc'
-                },
-                skip,
-                take
-            }),
-            prisma.donations.count({ where })
-        ]);
-
-        return res.json({
-            success: true,
-            data: donations,
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                totalPages: Math.ceil(total / parseInt(limit))
+    const [donations, total] = await Promise.all([
+      prisma.donations.findMany({
+        where,
+        include: {
+          donation_campaigns: {
+            select: {
+              title: true,
+              donation_type: true,
+              communities: {
+                select: {
+                  community_name: true,
+                  community_slug: true
+                }
+              }
             }
-        });
+          },
+          communities: {
+            select: {
+              community_id: true,
+              community_name: true,
+              community_slug: true
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        },
+        skip,
+        take
+      }),
+      prisma.donations.count({ where })
+    ]);
 
-    } catch (error) {
-        console.error("Get My Donations Error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Gagal mengambil daftar donasi",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
+    return res.json({
+      success: true,
+      data: donations,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    console.error("Get My Donations Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil daftar donasi",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 // GET Donations by Campaign
 export const getDonationsByCampaign = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { page = 1, limit = 20, status, donation_type } = req.query;
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20, status, donation_type } = req.query;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const take = parseInt(limit);
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = parseInt(limit);
 
-        const where = {
-            campaign_id: parseInt(id)
-        };
+    const where = {
+      campaign_id: parseInt(id)
+    };
 
-        if (status) where.status = status;
-        if (donation_type) where.donation_type = donation_type;
+    if (status) where.status = status;
+    if (donation_type) where.donation_type = donation_type;
 
-        const [donations, total] = await Promise.all([
-            prisma.donations.findMany({
-                where,
-                include: {
-                    users_donations_representative_idTousers: {
-                        select: {
-                            user_id: true,
-                            full_name: true,
-                            email: true,
-                            profile_picture: true,
-                            phone_number: true
-                        }
-                    },
-                    donation_campaigns: {
-                        select: {
-                            title: true
-                        }
-                    },
-                    communities: {
-                        select: {
-                            community_name: true
-                        }
-                    }
-                },
-                orderBy: {
-                    created_at: 'desc'
-                },
-                skip,
-                take
-            }),
-            prisma.donations.count({ where })
-        ]);
-
-        // Calculate totals
-        const totals = await prisma.donations.aggregate({
-            where: {
-                campaign_id: parseInt(id),
-                status: 'confirmed'
-            },
-            _sum: {
-                amount: true
-            },
-            _count: true
-        });
-
-        return res.json({
-            success: true,
-            data: donations,
-            summary: {
-                total_donations: totals._count,
-                total_amount: totals._sum.amount || 0
-            },
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                totalPages: Math.ceil(total / parseInt(limit))
+    const [donations, total] = await Promise.all([
+      prisma.donations.findMany({
+        where,
+        include: {
+          users_donations_representative_idTousers: {
+            select: {
+              user_id: true,
+              full_name: true,
+              email: true,
+              profile_picture: true,
+              phone_number: true
             }
-        });
+          },
+          donation_campaigns: {
+            select: {
+              title: true
+            }
+          },
+          communities: {
+            select: {
+              community_name: true
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        },
+        skip,
+        take
+      }),
+      prisma.donations.count({ where })
+    ]);
 
-    } catch (error) {
-        console.error("Get Donations By Campaign Error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Gagal mengambil daftar donasi",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
+    // Calculate totals
+    const totals = await prisma.donations.aggregate({
+      where: {
+        campaign_id: parseInt(id),
+        status: 'confirmed'
+      },
+      _sum: {
+        amount: true
+      },
+      _count: true
+    });
+
+    return res.json({
+      success: true,
+      data: donations,
+      summary: {
+        total_donations: totals._count,
+        total_amount: totals._sum.amount || 0
+      },
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    console.error("Get Donations By Campaign Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil daftar donasi",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 // GET Donations by Community
 export const getDonationsByCommunity = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { page = 1, limit = 20, status, donation_type } = req.query;
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20, status, donation_type } = req.query;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const take = parseInt(limit);
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = parseInt(limit);
 
-        const where = {
-            community_id: parseInt(id)
-        };
+    const where = {
+      community_id: parseInt(id)
+    };
 
-        if (status) where.status = status;
-        if (donation_type) where.donation_type = donation_type;
+    if (status) where.status = status;
+    if (donation_type) where.donation_type = donation_type;
 
-        const [donations, total] = await Promise.all([
-            prisma.donations.findMany({
-                where,
-                include: {
-                    users_donations_representative_idTousers: {
-                        select: {
-                            user_id: true,
-                            full_name: true,
-                            email: true,
-                            profile_picture: true,
-                            phone_number: true
-                        }
-                    },
-                    donation_campaigns: {
-                        select: {
-                            title: true,
-                            donation_type: true
-                        }
-                    },
-                    communities: {
-                        select: {
-                            community_name: true,
-                            community_slug: true
-                        }
-                    }
-                },
-                orderBy: {
-                    created_at: 'desc'
-                },
-                skip,
-                take
-            }),
-            prisma.donations.count({ where })
-        ]);
-
-        // Get community donation summary
-        const summary = await prisma.donations.aggregate({
-            where: {
-                community_id: parseInt(id),
-                status: 'confirmed'
-            },
-            _sum: {
-                amount: true
-            },
-            _count: true
-        });
-
-        return res.json({
-            success: true,
-            data: donations,
-            summary: {
-                total_donations: summary._count,
-                total_amount: summary._sum.amount || 0
-            },
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                totalPages: Math.ceil(total / parseInt(limit))
+    const [donations, total] = await Promise.all([
+      prisma.donations.findMany({
+        where,
+        include: {
+          users_donations_representative_idTousers: {
+            select: {
+              user_id: true,
+              full_name: true,
+              email: true,
+              profile_picture: true,
+              phone_number: true
             }
-        });
+          },
+          donation_campaigns: {
+            select: {
+              title: true,
+              donation_type: true
+            }
+          },
+          communities: {
+            select: {
+              community_name: true,
+              community_slug: true
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        },
+        skip,
+        take
+      }),
+      prisma.donations.count({ where })
+    ]);
 
-    } catch (error) {
-        console.error("Get Donations By Community Error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Gagal mengambil daftar donasi",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
+    // Get community donation summary
+    const summary = await prisma.donations.aggregate({
+      where: {
+        community_id: parseInt(id),
+        status: 'confirmed'
+      },
+      _sum: {
+        amount: true
+      },
+      _count: true
+    });
+
+    return res.json({
+      success: true,
+      data: donations,
+      summary: {
+        total_donations: summary._count,
+        total_amount: summary._sum.amount || 0
+      },
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    console.error("Get Donations By Community Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil daftar donasi",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 // GET Donation by ID
 export const getDonationById = async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        const donation = await prisma.donations.findUnique({
-            where: { donation_id: parseInt(id) },
-            include: {
-                donation_campaigns: {
-                    select: {
-                        title: true,
-                        donation_type: true,
-                        target_amount: true,
-                        collected_amount: true,
-                        communities: {
-                            select: {
-                                community_name: true,
-                                community_slug: true
-                            }
-                        }
-                    }
-                },
-                communities: {
-                    select: {
-                        community_id: true,
-                        community_name: true,
-                        community_slug: true,
-                        logo: true
-                    }
-                },
-                users_donations_representative_idTousers: {
-                    select: {
-                        user_id: true,
-                        full_name: true,
-                        email: true,
-                        profile_picture: true,
-                        phone_number: true
-                    }
-                },
-                users_donations_representation_verified_byTousers: {
-                    select: {
-                        user_id: true,
-                        full_name: true,
-                        email: true
-                    }
-                }
+    const donation = await prisma.donations.findUnique({
+      where: { donation_id: parseInt(id) },
+      include: {
+        donation_campaigns: {
+          select: {
+            title: true,
+            donation_type: true,
+            target_amount: true,
+            collected_amount: true,
+            communities: {
+              select: {
+                community_name: true,
+                community_slug: true
+              }
             }
-        });
-
-        if (!donation) {
-            return res.status(404).json({
-                success: false,
-                message: "Donasi tidak ditemukan"
-            });
+          }
+        },
+        communities: {
+          select: {
+            community_id: true,
+            community_name: true,
+            community_slug: true,
+            logo: true
+          }
+        },
+        users_donations_representative_idTousers: {
+          select: {
+            user_id: true,
+            full_name: true,
+            email: true,
+            profile_picture: true,
+            phone_number: true
+          }
+        },
+        users_donations_representation_verified_byTousers: {
+          select: {
+            user_id: true,
+            full_name: true,
+            email: true
+          }
         }
+      }
+    });
 
-        return res.json({
-            success: true,
-            data: donation
-        });
-
-    } catch (error) {
-        console.error("Get Donation By ID Error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Gagal mengambil donasi",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+    if (!donation) {
+      return res.status(404).json({
+        success: false,
+        message: "Donasi tidak ditemukan"
+      });
     }
+
+    return res.json({
+      success: true,
+      data: donation
+    });
+
+  } catch (error) {
+    console.error("Get Donation By ID Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil donasi",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 // UPDATE Donation Status
@@ -530,9 +536,9 @@ export const updateDonationStatus = async (req, res) => {
     // Validasi status
     const validStatuses = ['pending', 'confirmed', 'rejected', 'delivered'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid status. Must be one of: pending, confirmed, rejected, delivered' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be one of: pending, confirmed, rejected, delivered'
       });
     }
 
@@ -552,20 +558,24 @@ export const updateDonationStatus = async (req, res) => {
     }
 
     // Cek authorization
-    const isAdmin = req.user?.isAdmin;
+    const user = await prisma.users.findUnique({
+      where: { user_id: req.user.id },
+      include: { user_roles: true }
+    });
+    const isAdmin = user?.user_roles?.role_name?.toLowerCase() === 'system_admin';
     const isCommunityAdmin = await prisma.community_admins.findUnique({
       where: {
         community_id_user_id: {
           community_id: donation.community_id,
-          user_id: req.user.user_id
+          user_id: req.user.id
         }
       }
     });
 
     if (!isAdmin && !isCommunityAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Only admin or community admin can update donation status' 
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin or community admin can update donation status'
       });
     }
 
@@ -605,10 +615,10 @@ export const updateDonationStatus = async (req, res) => {
 
     // Update volunteer status jika volunteer registration
     if (donation.donation_type === 'volunteer') {
-      const volunteerStatus = status === 'confirmed' ? 'confirmed' 
-                           : status === 'rejected' ? 'declined'
-                           : 'pending';
-                           
+      const volunteerStatus = status === 'confirmed' ? 'confirmed'
+        : status === 'rejected' ? 'declined'
+          : 'pending';
+
       await prisma.volunteer_registrations.updateMany({
         where: {
           campaign_id: donation.campaign_id,
@@ -621,21 +631,11 @@ export const updateDonationStatus = async (req, res) => {
       });
     }
 
-    // Create notification
-    if (donation.donor_id) {
-      await createNotification({
-        type: 'donation_status_update',
-        title: `Donation ${status}`,
-        content: `Your donation for "${donation.donation_campaigns.title}" has been ${status}`,
-        target_user_id: donation.donor_id,
-        created_by: req.user.user_id
-      });
-    }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: updatedDonation,
-      message: `Donation status updated to ${status}` 
+      message: `Donation status updated to ${status}`
     });
   } catch (error) {
     console.error('Error updateDonationStatus:', error);
@@ -651,9 +651,9 @@ export const verifyDonation = async (req, res) => {
 
     // Hanya admin yang bisa verifikasi
     if (!req.user?.isAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Only admin can verify donations' 
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin can verify donations'
       });
     }
 
@@ -689,21 +689,10 @@ export const verifyDonation = async (req, res) => {
       });
     }
 
-    // Create notification
-    if (donation.donor_id) {
-      await createNotification({
-        type: 'donation_verified',
-        title: is_verified ? 'Donation Verified' : 'Donation Rejected',
-        content: `Your donation for "${donation.donation_campaigns.title}" has been ${is_verified ? 'verified' : 'rejected'}`,
-        target_user_id: donation.donor_id,
-        created_by: req.user.user_id
-      });
-    }
-
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: updatedDonation,
-      message: is_verified ? 'Donation verified successfully' : 'Donation rejected' 
+      message: is_verified ? 'Donation verified successfully' : 'Donation rejected'
     });
   } catch (error) {
     console.error('Error verifyDonation:', error);

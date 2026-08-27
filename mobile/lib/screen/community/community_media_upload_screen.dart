@@ -7,9 +7,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
-import '../provider/auth_provider.dart';
-import '../services/auth_service.dart';
-import '../services/communities_service.dart';
+import '../../provider/auth_provider.dart';
+import '../../services/auth_service.dart';
+import '../../services/communities_service.dart';
 
 /// Langkah 2 dari alur buat komunitas: unggah logo (crop persegi) dan
 /// banner (crop lebar 16:9) untuk komunitas yang baru dibuat. Dipisah dari

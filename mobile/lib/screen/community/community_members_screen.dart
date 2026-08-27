@@ -4,9 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
-import '../provider/auth_provider.dart';
-import '../services/communities_service.dart';
-import 'other_user_profile_screen.dart'; // Kita akan buat screen ini
+import '../../provider/auth_provider.dart';
+import '../../services/communities_service.dart';
+import '../other_user_profile_screen.dart'; // Kita akan buat screen ini
 
 class CommunityMembersScreen extends StatefulWidget {
   final int communityId;

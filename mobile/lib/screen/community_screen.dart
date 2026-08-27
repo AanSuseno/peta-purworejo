@@ -9,8 +9,8 @@ import 'package:shimmer/shimmer.dart';
 import '../provider/auth_provider.dart';
 import '../services/auth_service.dart';
 import '../services/communities_service.dart';
-import 'community_detail_screen.dart';
-import 'create_community_screen.dart';
+import 'community/community_detail_screen.dart';
+import 'community/create_community_screen.dart';
 import '../widgets/swipe_join_button.dart';
 
 /// Halaman daftar komunitas: cari, scroll (infinite load), gabung/keluar.

@@ -27,18 +27,37 @@ export const getCommunityPosts = async (req, res) => {
             });
         }
 
+        // Cek apakah user adalah member
+        const userId = req.user?.id;
+        let isMember = false;
+        
+        if (userId) {
+            const membership = await prisma.community_members.findFirst({
+                where: {
+                    community_id: parseInt(id),
+                    user_id: userId,
+                    status: 'active'
+                }
+            });
+            isMember = !!membership;
+        }
+
         // Build filter
         const where = {
             community_id: parseInt(id),
             status: 'active'
         };
 
-        if (post_type) {
-            where.post_type = post_type;
+        // Jika bukan member, hanya tampilkan postingan public
+        if (!isMember) {
+            where.visibility = 'public';
+        } else if (visibility) {
+            // Jika member dan ada filter visibility
+            where.visibility = visibility;
         }
 
-        if (visibility) {
-            where.visibility = visibility;
+        if (post_type) {
+            where.post_type = post_type;
         }
 
         // Build sorting
@@ -95,16 +114,18 @@ export const getCommunityPosts = async (req, res) => {
             comments_count: post._count.post_comments,
             participants_count: post._count.event_participants,
             is_event: post.post_type === 'event',
-            is_liked: false, // Default untuk list
-            is_participant: false, // Default untuk list
-            event_start_time: post.event_start_time, // Sudah string dari database
-            event_end_time: post.event_end_time, // Sudah string dari database
+            is_liked: false,
+            is_participant: false,
+            event_start_time: post.event_start_time,
+            event_end_time: post.event_end_time,
+            is_public: post.visibility === 'public', // Tambahkan info visibility
             _count: undefined
         }));
 
         return res.json({
             success: true,
             data: formattedPosts,
+            isMember: isMember, // Kirim status member ke frontend
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),

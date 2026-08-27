@@ -91,10 +91,17 @@ export const createPost = async (req, res) => {
 
         // Tambahkan field event jika post_type = event
         if (post_type === 'event') {
-            postData.event_date = event_date ? new Date(event_date) : null;
-            // SIMPAN SEBAGAI STRING (langsung dari request)
-            postData.event_start_time = event_start_time || null;
-            postData.event_end_time = event_end_time || null;
+            if (event_start_time && event_date) {
+                postData.event_start_time = new Date(`${event_date}T${event_start_time}`);
+            } else {
+                postData.event_start_time = null;
+            }
+
+            if (event_end_time && event_date) {
+                postData.event_end_time = new Date(`${event_date}T${event_end_time}`);
+            } else {
+                postData.event_end_time = null;
+            }
             postData.event_location = event_location || null;
             postData.event_latitude = event_latitude ? parseFloat(event_latitude) : null;
             postData.event_longitude = event_longitude ? parseFloat(event_longitude) : null;
@@ -249,10 +256,17 @@ export const createPostWithMedia = async (req, res) => {
 
         // Tambahkan field event jika post_type = event
         if (post_type === 'event') {
-            postData.event_date = event_date ? new Date(event_date) : null;
-            // SIMPAN SEBAGAI STRING (langsung dari request)
-            postData.event_start_time = event_start_time || null;
-            postData.event_end_time = event_end_time || null;
+            if (event_start_time && event_date) {
+                postData.event_start_time = new Date(`${event_date}T${event_start_time}`);
+            } else {
+                postData.event_start_time = null;
+            }
+
+            if (event_end_time && event_date) {
+                postData.event_end_time = new Date(`${event_date}T${event_end_time}`);
+            } else {
+                postData.event_end_time = null;
+            }
             postData.event_location = event_location || null;
             postData.event_latitude = event_latitude ? parseFloat(event_latitude) : null;
             postData.event_longitude = event_longitude ? parseFloat(event_longitude) : null;
@@ -425,7 +439,7 @@ export const updatePost = async (req, res) => {
         // Update event fields jika post_type = event
         if (post_type === 'event' || post.post_type === 'event') {
             let dateToUse = null;
-            
+
             if (event_date !== undefined) {
                 updateData.event_date = event_date ? new Date(event_date) : null;
             }

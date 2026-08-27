@@ -7,9 +7,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
-import '../provider/auth_provider.dart';
-import '../services/auth_service.dart';
-import '../services/communities_service.dart';
+import '../../provider/auth_provider.dart';
+import '../../services/auth_service.dart';
+import '../../services/communities_service.dart';
 
 /// Form edit komunitas yang sudah ada. Dibuka dari [CommunityDetailScreen]
 /// lewat tombol "Edit Komunitas" (hanya terlihat untuk admin/founder).

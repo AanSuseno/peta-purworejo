@@ -3,8 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:provider/provider.dart';
 
-import '../provider/auth_provider.dart';
-import '../services/communities_service.dart';
+import '../../provider/auth_provider.dart';
+import '../../services/communities_service.dart';
 import 'community_media_upload_screen.dart';
 
 /// Langkah 1 dari alur buat komunitas: isi data teks dulu (nama, deskripsi,
