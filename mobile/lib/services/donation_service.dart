@@ -294,15 +294,16 @@ class DonationService {
     }
   }
 
+  /// POST /donations/campaigns - Create campaign
   Future<Map<String, dynamic>> createCampaign({
     required String token,
     required String title,
     required String description,
     required String donationType, // 'money', 'goods', 'volunteer'
-    int? communityId, // 🔥 Ubah menjadi nullable (opsional)
+    int? communityId,
     double? targetAmount,
-    String? bankAccountInfo,
-    String? ewalletInfo,
+    String?
+        paymentInfo, // 🔥 GABUNG: bank_account_info + ewallet_info → payment_info
     String? goodsDescription,
     String? volunteerNeeds,
     int? volunteerSlots,
@@ -328,12 +329,12 @@ class DonationService {
     if (targetAmount != null && targetAmount > 0) {
       body['target_amount'] = targetAmount;
     }
-    if (bankAccountInfo != null && bankAccountInfo.isNotEmpty) {
-      body['bank_account_info'] = bankAccountInfo.trim();
+
+    // 🔥 PERUBAHAN: Gunakan payment_info (satu field) bukan bank_account_info + ewallet_info
+    if (paymentInfo != null && paymentInfo.isNotEmpty) {
+      body['payment_info'] = paymentInfo.trim();
     }
-    if (ewalletInfo != null && ewalletInfo.isNotEmpty) {
-      body['ewallet_info'] = ewalletInfo.trim();
-    }
+
     if (goodsDescription != null && goodsDescription.isNotEmpty) {
       body['goods_description'] = goodsDescription.trim();
     }
@@ -349,6 +350,10 @@ class DonationService {
     if (endDate != null && endDate.isNotEmpty) {
       body['end_date'] = endDate;
     }
+
+    // ❌ HAPUS: volunteer_registered (tidak ada di DB)
+    // ❌ HAPUS: bank_account_info (diganti payment_info)
+    // ❌ HAPUS: ewallet_info (diganti payment_info)
 
     _debugLog(tag, 'Request body: ${jsonEncode(body)}');
 
@@ -389,33 +394,175 @@ class DonationService {
     }
   }
 
+  /// PUT /donations/campaigns/:id - Update campaign
+  Future<Map<String, dynamic>> updateCampaign({
+    required String token,
+    required int campaignId,
+    required String title,
+    required String description,
+    required String donationType,
+    double? targetAmount,
+    String?
+        paymentInfo, // 🔥 GABUNG: bank_account_info + ewallet_info → payment_info
+    String? goodsDescription,
+    String? volunteerNeeds,
+    int? volunteerSlots,
+    String? startDate,
+    String? endDate,
+  }) async {
+    const tag = 'updateCampaign';
+    _debugLog(tag, 'Updating campaign ID: $campaignId');
+
+    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId');
+
+    final body = <String, dynamic>{
+      'title': title.trim(),
+      'description': description.trim(),
+      'donation_type': donationType,
+    };
+
+    if (targetAmount != null && targetAmount > 0) {
+      body['target_amount'] = targetAmount;
+    }
+
+    // 🔥 PERUBAHAN: Gunakan payment_info (satu field)
+    if (paymentInfo != null && paymentInfo.isNotEmpty) {
+      body['payment_info'] = paymentInfo.trim();
+    }
+
+    if (goodsDescription != null && goodsDescription.isNotEmpty) {
+      body['goods_description'] = goodsDescription.trim();
+    }
+    if (volunteerNeeds != null && volunteerNeeds.isNotEmpty) {
+      body['volunteer_needs'] = volunteerNeeds.trim();
+    }
+    if (volunteerSlots != null && volunteerSlots > 0) {
+      body['volunteer_slots'] = volunteerSlots;
+    }
+    if (startDate != null && startDate.isNotEmpty) {
+      body['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      body['end_date'] = endDate;
+    }
+
+    // ❌ HAPUS: bank_account_info (diganti payment_info)
+    // ❌ HAPUS: ewallet_info (diganti payment_info)
+
+    _debugLog(tag, 'Request body: ${jsonEncode(body)}');
+
+    try {
+      final response = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Campaign updated successfully');
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(data['message'] ??
+            'Anda tidak memiliki izin untuk mengupdate campaign ini');
+      }
+
+      if (response.statusCode == 400) {
+        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Campaign tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal mengupdate campaign');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
+  /// DELETE /donations/campaigns/:id - Delete campaign
+  Future<void> deleteCampaign({
+    required String token,
+    required int campaignId,
+  }) async {
+    const tag = 'deleteCampaign';
+    _debugLog(tag, 'Deleting campaign ID: $campaignId');
+
+    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId');
+
+    try {
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Campaign deleted successfully');
+        return;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+            data['message'] ?? 'Anda tidak berhak menghapus campaign ini');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Campaign tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal menghapus campaign');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    }
+  }
+
   // ==================== DONATION ENDPOINTS ====================
 
+  /// POST /donations/campaigns/:id/donate - Donasi uang
   Future<Map<String, dynamic>> donateMoney({
     required String token,
     required int campaignId,
     required double amount,
-    required String paymentMethod,
     required String donorName,
     required String donorPhone,
     required String donorEmail,
     int? communityId,
-    String? donationPurpose,
-    int? representativeId,
     bool isAnonymous = false,
     File? proofImage,
   }) async {
     const tag = 'donateMoney';
+
     _debugLog(tag, 'Donating money to campaign: $campaignId');
 
-    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId/donate');
+    final uri = Uri.parse(
+      '$baseUrl/donations/campaigns/$campaignId/donate',
+    );
 
     try {
       final request = http.MultipartRequest('POST', uri)
         ..headers['Authorization'] = 'Bearer $token'
         ..fields['donation_type'] = 'money'
         ..fields['amount'] = amount.toString()
-        ..fields['payment_method'] = paymentMethod
         ..fields['donor_name'] = donorName.trim()
         ..fields['donor_phone'] = donorPhone.trim()
         ..fields['donor_email'] = donorEmail.trim()
@@ -424,50 +571,63 @@ class DonationService {
       if (communityId != null) {
         request.fields['community_id'] = communityId.toString();
       }
-      if (donationPurpose != null && donationPurpose.isNotEmpty) {
-        request.fields['donation_purpose'] = donationPurpose.trim();
-      }
-      if (representativeId != null) {
-        request.fields['representative_id'] = representativeId.toString();
-      }
 
-      // 🔥 PERBAIKAN: Field name harus 'proof_image' sesuai backend
       if (proofImage != null) {
         final fileName = 'proof_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
         request.files.add(
           await http.MultipartFile.fromPath(
-            'proof_image', // 🔥 Ubah dari 'proof' menjadi 'proof_image'
+            'proof_image',
             proofImage.path,
             filename: fileName,
             contentType: MediaType('image', 'jpeg'),
           ),
         );
+
         _debugLog(tag, 'Proof image attached: $fileName');
       }
 
       final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
 
-      _debugLog(tag, 'Response status: ${response.statusCode}');
+      final response = await http.Response.fromStream(
+        streamedResponse,
+      );
+
+      _debugLog(
+        tag,
+        'Response status: ${response.statusCode}',
+      );
 
       final data = _parseResponse(tag, response);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        _debugLog(tag, '✅ Donation created successfully');
+        _debugLog(
+          tag,
+          '✅ Donation created successfully',
+        );
+
         return data['data'] as Map<String, dynamic>;
       }
 
       if (response.statusCode == 401) {
-        throw AuthException('Token tidak valid atau kadaluarsa');
+        throw AuthException(
+          'Token tidak valid atau kadaluarsa',
+        );
       }
 
       if (response.statusCode == 400) {
-        throw Exception(data['message'] ?? 'Data donasi tidak valid');
+        throw Exception(
+          data['message'] ?? 'Data donasi tidak valid',
+        );
       }
 
-      throw Exception(data['message'] ?? 'Gagal membuat donasi');
+      throw Exception(
+        data['message'] ?? 'Gagal membuat donasi',
+      );
     } on http.ClientException {
-      throw Exception('Gagal terhubung ke server');
+      throw Exception(
+        'Gagal terhubung ke server',
+      );
     }
   }
 
@@ -475,89 +635,88 @@ class DonationService {
   Future<Map<String, dynamic>> donateGoods({
     required String token,
     required int campaignId,
-    required String goodsType,
     required String goodsName,
     required double goodsQuantity,
     required String goodsUnit,
-    required String deliveryMethod,
     required String donorName,
     required String donorPhone,
     required String donorEmail,
-    String? deliveryAddress,
+    String? deliveryNotes,
     int? communityId,
-    String? donationPurpose,
-    int? representativeId,
     bool isAnonymous = false,
-    File? goodsPhoto,
   }) async {
     const tag = 'donateGoods';
-    _debugLog(tag, 'Donating goods to campaign: $campaignId');
 
-    final uri =
-        Uri.parse('$baseUrl/donations/campaigns/$campaignId/donate-goods');
+    _debugLog(
+      tag,
+      'Donating goods to campaign: $campaignId',
+    );
+
+    final uri = Uri.parse(
+      '$baseUrl/donations/campaigns/$campaignId/donate-goods',
+    );
 
     try {
       final request = http.MultipartRequest('POST', uri)
         ..headers['Authorization'] = 'Bearer $token'
         ..fields['donation_type'] = 'goods'
-        ..fields['goods_type'] = goodsType
         ..fields['goods_name'] = goodsName.trim()
         ..fields['goods_quantity'] = goodsQuantity.toString()
         ..fields['goods_unit'] = goodsUnit
-        ..fields['delivery_method'] = deliveryMethod
         ..fields['donor_name'] = donorName.trim()
         ..fields['donor_phone'] = donorPhone.trim()
         ..fields['donor_email'] = donorEmail.trim()
         ..fields['is_anonymous'] = isAnonymous ? 'true' : 'false';
 
-      if (deliveryAddress != null && deliveryAddress.isNotEmpty) {
-        request.fields['delivery_address'] = deliveryAddress.trim();
+      if (deliveryNotes != null && deliveryNotes.isNotEmpty) {
+        request.fields['delivery_notes'] = deliveryNotes.trim();
       }
+
       if (communityId != null) {
         request.fields['community_id'] = communityId.toString();
       }
-      if (donationPurpose != null && donationPurpose.isNotEmpty) {
-        request.fields['donation_purpose'] = donationPurpose.trim();
-      }
-      if (representativeId != null) {
-        request.fields['representative_id'] = representativeId.toString();
-      }
-
-      // 🔥 PERBAIKAN: Field name harus 'goods_photo' sesuai backend
-      if (goodsPhoto != null) {
-        final fileName = 'goods_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'goods_photo', // 🔥 Sudah benar
-            goodsPhoto.path,
-            filename: fileName,
-            contentType: MediaType('image', 'jpeg'),
-          ),
-        );
-        _debugLog(tag, 'Goods photo attached: $fileName');
-      }
 
       final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+
+      final response = await http.Response.fromStream(
+        streamedResponse,
+      );
+
+      _debugLog(
+        tag,
+        'Response status: ${response.statusCode}',
+      );
 
       final data = _parseResponse(tag, response);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        _debugLog(tag, '✅ Goods donation created successfully');
+        _debugLog(
+          tag,
+          '✅ Goods donation created successfully',
+        );
+
         return data['data'] as Map<String, dynamic>;
       }
 
       if (response.statusCode == 401) {
-        throw AuthException('Token tidak valid atau kadaluarsa');
+        throw AuthException(
+          'Token tidak valid atau kadaluarsa',
+        );
       }
 
       if (response.statusCode == 400) {
-        throw Exception(data['message'] ?? 'Data donasi tidak valid');
+        throw Exception(
+          data['message'] ?? 'Data donasi tidak valid',
+        );
       }
 
-      throw Exception(data['message'] ?? 'Gagal membuat donasi barang');
+      throw Exception(
+        data['message'] ?? 'Gagal membuat donasi barang',
+      );
     } on http.ClientException {
-      throw Exception('Gagal terhubung ke server');
+      throw Exception(
+        'Gagal terhubung ke server',
+      );
     }
   }
 
@@ -571,20 +730,30 @@ class DonationService {
     String? notes,
   }) async {
     const tag = 'registerVolunteer';
-    _debugLog(tag, 'Registering as volunteer for campaign: $campaignId');
 
-    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId/volunteer');
+    _debugLog(
+      tag,
+      'Registering as volunteer for campaign: $campaignId',
+    );
+
+    final uri = Uri.parse(
+      '$baseUrl/donations/campaigns/$campaignId/volunteer',
+    );
 
     final body = <String, dynamic>{};
+
     if (availability != null && availability.isNotEmpty) {
       body['availability'] = availability.trim();
     }
+
     if (skills != null && skills.isNotEmpty) {
       body['skills'] = skills.trim();
     }
+
     if (experience != null && experience.isNotEmpty) {
       body['experience'] = experience.trim();
     }
+
     if (notes != null && notes.isNotEmpty) {
       body['notes'] = notes.trim();
     }
@@ -599,24 +768,41 @@ class DonationService {
         body: jsonEncode(body),
       );
 
+      _debugLog(
+        tag,
+        'Response status: ${response.statusCode}',
+      );
+
       final data = _parseResponse(tag, response);
 
-      if (response.statusCode == 200) {
-        _debugLog(tag, '✅ Volunteer registration successful');
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _debugLog(
+          tag,
+          '✅ Volunteer registration successful',
+        );
+
         return data['data'] as Map<String, dynamic>;
       }
 
       if (response.statusCode == 401) {
-        throw AuthException('Token tidak valid atau kadaluarsa');
+        throw AuthException(
+          'Token tidak valid atau kadaluarsa',
+        );
       }
 
       if (response.statusCode == 400) {
-        throw Exception(data['message'] ?? 'Data pendaftaran tidak valid');
+        throw Exception(
+          data['message'] ?? 'Data pendaftaran tidak valid',
+        );
       }
 
-      throw Exception(data['message'] ?? 'Gagal mendaftar sebagai volunteer');
+      throw Exception(
+        data['message'] ?? 'Gagal mendaftar sebagai volunteer',
+      );
     } on http.ClientException {
-      throw Exception('Gagal terhubung ke server');
+      throw Exception(
+        'Gagal terhubung ke server',
+      );
     }
   }
 
@@ -745,141 +931,13 @@ class DonationService {
       throw Exception('Gagal terhubung ke server');
     }
   }
+}
 
-  Future<void> deleteCampaign({
-    required String token,
-    required int campaignId,
-  }) async {
-    const tag = 'deleteCampaign';
-    _debugLog(tag, 'Deleting campaign ID: $campaignId');
+// AuthException untuk error autentikasi
+class AuthException implements Exception {
+  final String message;
+  AuthException(this.message);
 
-    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId');
-
-    try {
-      final response = await http.delete(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      final data = _parseResponse(tag, response);
-
-      if (response.statusCode == 200) {
-        _debugLog(tag, '✅ Campaign deleted successfully');
-        return;
-      }
-
-      if (response.statusCode == 401) {
-        throw AuthException('Token tidak valid atau kadaluarsa');
-      }
-
-      if (response.statusCode == 403) {
-        throw Exception(
-            data['message'] ?? 'Anda tidak berhak menghapus campaign ini');
-      }
-
-      if (response.statusCode == 404) {
-        throw Exception(data['message'] ?? 'Campaign tidak ditemukan');
-      }
-
-      throw Exception(data['message'] ?? 'Gagal menghapus campaign');
-    } on http.ClientException {
-      throw Exception('Gagal terhubung ke server');
-    }
-  }
-
-  Future<Map<String, dynamic>> updateCampaign({
-    required String token,
-    required int campaignId,
-    required String title,
-    required String description,
-    required String donationType,
-    double? targetAmount,
-    String? bankAccountInfo,
-    String? ewalletInfo,
-    String? goodsDescription,
-    String? volunteerNeeds,
-    int? volunteerSlots,
-    String? startDate,
-    String? endDate,
-  }) async {
-    const tag = 'updateCampaign';
-    _debugLog(tag, 'Updating campaign ID: $campaignId');
-
-    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId');
-
-    final body = <String, dynamic>{
-      'title': title.trim(),
-      'description': description.trim(),
-      'donation_type': donationType,
-    };
-
-    if (targetAmount != null && targetAmount > 0) {
-      body['target_amount'] = targetAmount;
-    }
-    if (bankAccountInfo != null && bankAccountInfo.isNotEmpty) {
-      body['bank_account_info'] = bankAccountInfo.trim();
-    }
-    if (ewalletInfo != null && ewalletInfo.isNotEmpty) {
-      body['ewallet_info'] = ewalletInfo.trim();
-    }
-    if (goodsDescription != null && goodsDescription.isNotEmpty) {
-      body['goods_description'] = goodsDescription.trim();
-    }
-    if (volunteerNeeds != null && volunteerNeeds.isNotEmpty) {
-      body['volunteer_needs'] = volunteerNeeds.trim();
-    }
-    if (volunteerSlots != null && volunteerSlots > 0) {
-      body['volunteer_slots'] = volunteerSlots;
-    }
-    if (startDate != null && startDate.isNotEmpty) {
-      body['start_date'] = startDate;
-    }
-    if (endDate != null && endDate.isNotEmpty) {
-      body['end_date'] = endDate;
-    }
-
-    _debugLog(tag, 'Request body: ${jsonEncode(body)}');
-
-    try {
-      final response = await http.put(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(body),
-      );
-
-      final data = _parseResponse(tag, response);
-
-      if (response.statusCode == 200) {
-        _debugLog(tag, '✅ Campaign updated successfully');
-        return data['data'] as Map<String, dynamic>;
-      }
-
-      if (response.statusCode == 401) {
-        throw AuthException('Token tidak valid atau kadaluarsa');
-      }
-
-      if (response.statusCode == 403) {
-        throw Exception(data['message'] ??
-            'Anda tidak memiliki izin untuk mengupdate campaign ini');
-      }
-
-      if (response.statusCode == 400) {
-        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
-      }
-
-      if (response.statusCode == 404) {
-        throw Exception(data['message'] ?? 'Campaign tidak ditemukan');
-      }
-
-      throw Exception(data['message'] ?? 'Gagal mengupdate campaign');
-    } on http.ClientException {
-      throw Exception('Gagal terhubung ke server');
-    }
-  }
+  @override
+  String toString() => message;
 }

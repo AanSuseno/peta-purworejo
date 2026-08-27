@@ -34,7 +34,6 @@ export const getCampaigns = async (req, res) => {
             console.warn(`Invalid status value received: ${status}, ignoring filter`);
         }
 
-        if (status) where.status = status;
         if (donation_type) where.donation_type = donation_type;
         if (community_id) where.community_id = parseInt(community_id);
         if (search) {
@@ -64,10 +63,11 @@ export const getCampaigns = async (req, res) => {
                             profile_picture: true
                         }
                     },
+                    // 🔥 FIX: Hitung donations dan volunteer_registrations secara terpisah
                     _count: {
                         select: {
-                            donations: true,
-                            volunteer_registrations: true
+                            donations: true
+                            // ❌ HAPUS: volunteer_registrations (tidak ada relasi langsung)
                         }
                     }
                 },
@@ -80,11 +80,29 @@ export const getCampaigns = async (req, res) => {
             prisma.donation_campaigns.count({ where })
         ]);
 
+        // 🔥 FIX: Ambil count volunteer untuk setiap campaign secara terpisah
+        const campaignIds = campaigns.map(c => c.campaign_id);
+        
+        // Get volunteer counts for all campaigns
+        const volunteerCounts = await prisma.volunteer_registrations.groupBy({
+            by: ['campaign_id'],
+            where: {
+                campaign_id: { in: campaignIds }
+            },
+            _count: true
+        });
+
+        // Create map for quick lookup
+        const volunteerCountMap = {};
+        volunteerCounts.forEach(v => {
+            volunteerCountMap[v.campaign_id] = v._count;
+        });
+
         // Format response
         const formattedCampaigns = campaigns.map(campaign => ({
             ...campaign,
             total_donors: campaign._count.donations,
-            total_volunteers: campaign._count.volunteer_registrations,
+            total_volunteers: volunteerCountMap[campaign.campaign_id] || 0, // 🔥 FIX: Ambil dari map
             progress: campaign.target_amount 
                 ? Math.min((parseFloat(campaign.collected_amount) / parseFloat(campaign.target_amount)) * 100, 100)
                 : 0,
@@ -94,7 +112,9 @@ export const getCampaigns = async (req, res) => {
             is_rejected: campaign.approval_status === 'rejected',
             _count: undefined
         }));
+
         console.log(formattedCampaigns)
+        console.log(req.query)
 
         return res.json({
             success: true,
@@ -120,12 +140,69 @@ export const getCampaigns = async (req, res) => {
 // GET Campaign by ID
 export const getCampaignById = async (req, res) => {
     try {
-        const { id } = req.params;
-        const userId = req.user.id; // 🔥 Dapatkan user ID dari token
+        const campaignId = Number(req.params.id);
+        const userId = req.user.id;
 
+        // Validasi campaign ID
+        if (!Number.isInteger(campaignId)) {
+            return res.status(400).json({
+                success: false,
+                message: "ID campaign tidak valid"
+            });
+        }
+
+        // =========================================================
+        // HELPER: CEK SYSTEM ADMIN
+        // =========================================================
+        const isSystemAdmin = async (userId) => {
+            const user = await prisma.users.findUnique({
+                where: {
+                    user_id: userId
+                },
+                select: {
+                    user_roles: {
+                        select: {
+                            role_name: true
+                        }
+                    }
+                }
+            });
+
+            // Sesuaikan "admin" dengan role_name di database kamu
+            return user?.user_roles?.role_name === "admin";
+        };
+
+        // =========================================================
+        // HELPER: CEK COMMUNITY ADMIN
+        // =========================================================
+        const checkCommunityAdmin = async (communityId, userId) => {
+            const admin = await prisma.community_admins.findUnique({
+                where: {
+                    community_id_user_id: {
+                        community_id: communityId,
+                        user_id: userId
+                    }
+                },
+                select: {
+                    role: true
+                }
+            });
+
+            return {
+                isAdmin: !!admin,
+                role: admin?.role || null
+            };
+        };
+
+        // =========================================================
+        // 1. AMBIL CAMPAIGN
+        // =========================================================
         const campaign = await prisma.donation_campaigns.findUnique({
-            where: { campaign_id: parseInt(id) },
+            where: {
+                campaign_id: campaignId
+            },
             include: {
+                // Community
                 communities: {
                     select: {
                         community_id: true,
@@ -135,6 +212,8 @@ export const getCampaignById = async (req, res) => {
                         description: true
                     }
                 },
+
+                // Creator
                 users: {
                     select: {
                         user_id: true,
@@ -144,12 +223,14 @@ export const getCampaignById = async (req, res) => {
                         phone_number: true
                     }
                 },
+
+                // 5 donation terbaru yang sudah confirmed
                 donations: {
                     where: {
-                        status: 'confirmed'
+                        status: "confirmed"
                     },
                     include: {
-                        users_donations_representative_idTousers: {
+                        users_donations_donor_idTousers: {
                             select: {
                                 user_id: true,
                                 full_name: true,
@@ -158,38 +239,16 @@ export const getCampaignById = async (req, res) => {
                         }
                     },
                     orderBy: {
-                        created_at: 'desc'
+                        created_at: "desc"
                     },
                     take: 5
-                },
-                volunteer_registrations: {
-                    where: {
-                        status: 'confirmed'
-                    },
-                    include: {
-                        users: {
-                            select: {
-                                user_id: true,
-                                full_name: true,
-                                profile_picture: true,
-                                phone_number: true
-                            }
-                        }
-                    },
-                    orderBy: {
-                        created_at: 'desc'
-                    },
-                    take: 5
-                },
-                _count: {
-                    select: {
-                        donations: true,
-                        volunteer_registrations: true
-                    }
                 }
             }
         });
 
+        // =========================================================
+        // 2. CAMPAIGN TIDAK DITEMUKAN
+        // =========================================================
         if (!campaign) {
             return res.status(404).json({
                 success: false,
@@ -197,66 +256,149 @@ export const getCampaignById = async (req, res) => {
             });
         }
 
-        // 🔥 CEK PERMISSION USER
+        // =========================================================
+        // 3. PERMISSION
+        // =========================================================
+
+        // Creator campaign
+        const isCreator = campaign.creator_id === userId;
+
+        // System admin
+        const isSystemAdminUser = await isSystemAdmin(userId);
+
         let isAdmin = false;
         let isFounder = false;
         let userRole = null;
 
-        // 1. Cek apakah user adalah creator campaign
-        const isCreator = campaign.creator_id === userId;
-
-        // 2. Cek apakah user adalah system admin
-        const isSystemAdminUser = await isSystemAdmin(userId);
-
-        // 3. Cek apakah user adalah admin/founder komunitas
+        // Community admin / founder
         if (campaign.community_id) {
-            const adminCheck = await checkCommunityAdmin(campaign.community_id, userId);
+            const adminCheck = await checkCommunityAdmin(
+                campaign.community_id,
+                userId
+            );
+
             isAdmin = adminCheck.isAdmin;
-            isFounder = adminCheck.role === 'founder';
             userRole = adminCheck.role;
+            isFounder = adminCheck.role === "founder";
         }
 
-        // 🔥 Cek apakah user adalah member komunitas
+        // Community member
         let isMember = false;
+
         if (campaign.community_id) {
-            const membership = await prisma.community_members.findFirst({
+            const membership = await prisma.community_members.findUnique({
                 where: {
-                    community_id: campaign.community_id,
-                    user_id: userId,
-                    status: 'active'
+                    community_id_user_id: {
+                        community_id: campaign.community_id,
+                        user_id: userId
+                    }
+                },
+                select: {
+                    status: true
                 }
             });
-            isMember = !!membership;
+
+            isMember = membership?.status === "active";
         }
 
-        // Get donation stats
+        // =========================================================
+        // 4. DONATION STATISTICS
+        // =========================================================
+
         const donationStats = await prisma.donations.aggregate({
             where: {
-                campaign_id: parseInt(id),
-                status: 'confirmed'
+                campaign_id: campaignId,
+                status: "confirmed"
             },
             _sum: {
                 amount: true
             },
-            _count: true
+            _count: {
+                _all: true
+            }
         });
+
+        const collectedAmount = Number(
+            donationStats._sum.amount || 0
+        );
+
+        const totalDonors = donationStats._count._all;
+
+        // =========================================================
+        // 5. VOLUNTEER STATISTICS
+        // =========================================================
+        //
+        // volunteer_registrations TIDAK mempunyai relation langsung
+        // ke donation_campaigns pada schema Prisma.
+        //
+        // Jadi query berdasarkan campaign_id.
+        //
+
+        const totalVolunteers = await prisma.volunteer_registrations.count({
+            where: {
+                campaign_id: campaignId
+            }
+        });
+
+        const confirmedVolunteers =
+            await prisma.volunteer_registrations.count({
+                where: {
+                    campaign_id: campaignId,
+                    status: "confirmed"
+                }
+            });
+
+        // =========================================================
+        // 6. PROGRESS
+        // =========================================================
+
+        const targetAmount = campaign.target_amount
+            ? Number(campaign.target_amount)
+            : null;
+
+        const progress =
+            targetAmount && targetAmount > 0
+                ? Math.min(
+                    (collectedAmount / targetAmount) * 100,
+                    100
+                )
+                : 0;
+
+        // =========================================================
+        // 7. FORMAT RESPONSE
+        // =========================================================
 
         const formattedCampaign = {
             ...campaign,
-            total_donors: campaign._count.donations,
-            total_volunteers: campaign._count.volunteer_registrations,
-            collected_amount: parseFloat(campaign.collected_amount),
-            target_amount: campaign.target_amount ? parseFloat(campaign.target_amount) : null,
-            progress: campaign.target_amount 
-                ? Math.min((parseFloat(campaign.collected_amount) / parseFloat(campaign.target_amount)) * 100, 100)
-                : 0,
+
+            // Jangan expose Decimal Prisma mentah
+            target_amount: targetAmount,
+
+            // Gunakan hasil aggregate yang aktual
+            collected_amount: collectedAmount,
+
+            // Donor hanya confirmed
+            total_donors: totalDonors,
+
+            // Volunteer
+            total_volunteers: totalVolunteers,
+            confirmed_volunteers: confirmedVolunteers,
+
+            // Progress
+            progress: Number(progress.toFixed(2)),
+
+            // Statistik
             donation_stats: {
-                total_confirmed: donationStats._count,
-                total_amount: donationStats._sum.amount || 0
+                total_confirmed: totalDonors,
+                total_amount: collectedAmount
             },
-            _count: undefined,
-            
-            // 🔥 TAMBAHKAN INFORMASI PERMISSION USER
+
+            volunteer_stats: {
+                total: totalVolunteers,
+                confirmed: confirmedVolunteers
+            },
+
+            // Permission user
             user_permissions: {
                 is_creator: isCreator,
                 is_admin: isAdmin,
@@ -264,9 +406,23 @@ export const getCampaignById = async (req, res) => {
                 is_system_admin: isSystemAdminUser,
                 is_member: isMember,
                 user_role: userRole,
-                can_manage: isCreator || isAdmin || isFounder || isSystemAdminUser,
-                can_approve: isAdmin || isFounder || isSystemAdminUser,
-                can_delete: isCreator || isAdmin || isFounder || isSystemAdminUser,
+
+                can_manage:
+                    isCreator ||
+                    isAdmin ||
+                    isFounder ||
+                    isSystemAdminUser,
+
+                can_approve:
+                    isAdmin ||
+                    isFounder ||
+                    isSystemAdminUser,
+
+                can_delete:
+                    isCreator ||
+                    isAdmin ||
+                    isFounder ||
+                    isSystemAdminUser
             }
         };
 
@@ -277,10 +433,14 @@ export const getCampaignById = async (req, res) => {
 
     } catch (error) {
         console.error("Get Campaign By ID Error:", error);
+
         return res.status(500).json({
             success: false,
             message: "Gagal mengambil campaign donasi",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error:
+                process.env.NODE_ENV === "development"
+                    ? error.message
+                    : undefined
         });
     }
 };
@@ -326,7 +486,7 @@ export const getCampaignStats = async (req, res) => {
                     status: 'confirmed'
                 },
                 include: {
-                    users_donations_representative_idTousers: {
+                    users_donations_donor_idTousers: {
                         select: {
                             user_id: true,
                             full_name: true,
@@ -373,10 +533,29 @@ export const getCampaignStats = async (req, res) => {
 // GET Campaign Donation Summary
 export const getCampaignDonationSummary = async (req, res) => {
     try {
-        const { id } = req.params;
+        const campaignId = Number(req.params.id);
 
+        // =========================================================
+        // VALIDASI ID
+        // =========================================================
+        if (!Number.isInteger(campaignId)) {
+            return res.status(400).json({
+                success: false,
+                message: "ID campaign tidak valid"
+            });
+        }
+
+        // =========================================================
+        // CEK CAMPAIGN
+        // =========================================================
         const campaign = await prisma.donation_campaigns.findUnique({
-            where: { campaign_id: parseInt(id) }
+            where: {
+                campaign_id: campaignId
+            },
+            select: {
+                campaign_id: true,
+                title: true
+            }
         });
 
         if (!campaign) {
@@ -386,56 +565,80 @@ export const getCampaignDonationSummary = async (req, res) => {
             });
         }
 
-        // Group donations by type
+        // =========================================================
+        // GROUP DONATIONS BERDASARKAN TYPE
+        // =========================================================
         const donationsByType = await prisma.donations.groupBy({
-            by: ['donation_type'],
+            by: ["donation_type"],
             where: {
-                campaign_id: parseInt(id),
-                status: 'confirmed'
+                campaign_id: campaignId,
+                status: "confirmed"
             },
-            _count: true,
+            _count: {
+                _all: true
+            },
             _sum: {
                 amount: true
             }
         });
 
-        // Get money donations breakdown
+        // =========================================================
+        // MONEY DONATIONS
+        // =========================================================
         const moneyDonations = await prisma.donations.findMany({
             where: {
-                campaign_id: parseInt(id),
-                donation_type: 'money',
-                status: 'confirmed'
+                campaign_id: campaignId,
+                donation_type: "money",
+                status: "confirmed"
             },
             select: {
+                donation_id: true,
                 amount: true,
-                payment_method: true,
                 is_anonymous: true,
+                donor_name: true,
+                donor_id: true,
                 created_at: true
+            },
+            orderBy: {
+                created_at: "desc"
             }
         });
 
-        // Get goods donations breakdown
+        // =========================================================
+        // GOODS DONATIONS
+        // =========================================================
         const goodsDonations = await prisma.donations.findMany({
             where: {
-                campaign_id: parseInt(id),
-                donation_type: 'goods',
-                status: 'confirmed'
+                campaign_id: campaignId,
+                donation_type: "goods",
+                status: "confirmed"
             },
             select: {
-                goods_type: true,
+                donation_id: true,
+
+                // Field yang memang ada di schema
                 goods_name: true,
                 goods_quantity: true,
                 goods_unit: true,
+
+                delivery_notes: true,
                 is_anonymous: true,
+                donor_name: true,
+                donor_id: true,
                 created_at: true
+            },
+            orderBy: {
+                created_at: "desc"
             }
         });
 
-        // Get volunteer registrations
+        // =========================================================
+        // VOLUNTEER REGISTRATIONS
+        // =========================================================
         const volunteers = await prisma.volunteer_registrations.findMany({
             where: {
-                campaign_id: parseInt(id),
-                status: 'confirmed'
+                campaign_id: campaignId,
+                status: "confirmed"
             },
             include: {
                 users: {
@@ -446,38 +649,130 @@ export const getCampaignDonationSummary = async (req, res) => {
                         profile_picture: true
                     }
                 }
+            },
+            orderBy: {
+                created_at: "desc"
             }
         });
 
+        // =========================================================
+        // HELPER UNTUK MENCARI GROUP
+        // =========================================================
+        const getDonationGroup = (type) => {
+            return donationsByType.find(
+                (item) => item.donation_type === type
+            );
+        };
+
+        const moneyGroup = getDonationGroup("money");
+        const goodsGroup = getDonationGroup("goods");
+        const volunteerDonationGroup = getDonationGroup("volunteer");
+
+        // =========================================================
+        // TOTAL DONATIONS
+        // =========================================================
+        const totalDonations = donationsByType.reduce(
+            (total, donation) => total + donation._count._all,
+            0
+        );
+
+        // Decimal Prisma perlu dikonversi ke Number
+        const totalAmount = donationsByType.reduce(
+            (total, donation) => {
+                return total + Number(donation._sum.amount || 0);
+            },
+            0
+        );
+
+        // =========================================================
+        // RESPONSE
+        // =========================================================
         return res.json({
             success: true,
             data: {
-                campaign_id: parseInt(id),
+                campaign_id: campaign.campaign_id,
                 title: campaign.title,
+
                 summary: {
-                    total_donations: donationsByType.reduce((acc, d) => acc + d._count, 0),
-                    total_amount: donationsByType.reduce((acc, d) => acc + (d._sum.amount || 0), 0),
+                    total_donations: totalDonations,
+                    total_amount: totalAmount,
                     total_volunteers: volunteers.length
                 },
+
                 breakdown: {
+                    // -------------------------------------------------
+                    // MONEY
+                    // -------------------------------------------------
                     money: {
-                        count: donationsByType.find(d => d.donation_type === 'money')?._count || 0,
-                        amount: donationsByType.find(d => d.donation_type === 'money')?._sum.amount || 0,
-                        details: moneyDonations
+                        count: moneyGroup?._count._all || 0,
+                        amount: Number(
+                            moneyGroup?._sum.amount || 0
+                        ),
+                        details: moneyDonations.map((donation) => ({
+                            donation_id: donation.donation_id,
+                            amount: Number(donation.amount || 0),
+                            is_anonymous: donation.is_anonymous,
+                            donor_name: donation.is_anonymous
+                                ? null
+                                : donation.donor_name,
+                            donor_id: donation.is_anonymous
+                                ? null
+                                : donation.donor_id,
+                            created_at: donation.created_at
+                        }))
                     },
+
+                    // -------------------------------------------------
+                    // GOODS
+                    // -------------------------------------------------
                     goods: {
-                        count: donationsByType.find(d => d.donation_type === 'goods')?._count || 0,
-                        details: goodsDonations
+                        count: goodsGroup?._count._all || 0,
+
+                        details: goodsDonations.map((donation) => ({
+                            donation_id: donation.donation_id,
+                            goods_name: donation.goods_name,
+                            goods_quantity: donation.goods_quantity,
+                            goods_unit: donation.goods_unit,
+                            delivery_notes: donation.delivery_notes,
+                            is_anonymous: donation.is_anonymous,
+                            donor_name: donation.is_anonymous
+                                ? null
+                                : donation.donor_name,
+                            donor_id: donation.is_anonymous
+                                ? null
+                                : donation.donor_id,
+                            created_at: donation.created_at
+                        }))
                     },
+
+                    // -------------------------------------------------
+                    // VOLUNTEER
+                    // -------------------------------------------------
                     volunteer: {
+                        // Volunteer registration sebenarnya
+                        // disimpan di volunteer_registrations
                         count: volunteers.length,
-                        details: volunteers.map(v => ({
-                            user_id: v.user_id,
-                            full_name: v.users.full_name,
-                            phone_number: v.users.phone_number,
-                            availability: v.availability,
-                            skills: v.skills,
-                            notes: v.notes
+
+                        // Jumlah donation record dengan type volunteer
+                        donation_count:
+                            volunteerDonationGroup?._count._all || 0,
+
+                        details: volunteers.map((volunteer) => ({
+                            user_id: volunteer.user_id,
+                            full_name: volunteer.users?.full_name || null,
+                            phone_number:
+                                volunteer.users?.phone_number || null,
+                            profile_picture:
+                                volunteer.users?.profile_picture || null,
+                            availability: volunteer.availability,
+                            skills: volunteer.skills,
+                            experience: volunteer.experience,
+                            notes: volunteer.notes,
+                            status: volunteer.status,
+                            assigned_task: volunteer.assigned_task,
+                            confirmed_at: volunteer.confirmed_at,
+                            completed_at: volunteer.completed_at,
+                            created_at: volunteer.created_at
                         }))
                     }
                 }
@@ -485,11 +780,18 @@ export const getCampaignDonationSummary = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Get Campaign Donation Summary Error:", error);
+        console.error(
+            "Get Campaign Donation Summary Error:",
+            error
+        );
+
         return res.status(500).json({
             success: false,
             message: "Gagal mengambil ringkasan donasi",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error:
+                process.env.NODE_ENV === "development"
+                    ? error.message
+                    : undefined
         });
     }
 };
@@ -503,8 +805,7 @@ export const createCampaign = async (req, res) => {
       description,
       donation_type,
       target_amount,
-      bank_account_info,
-      ewallet_info,
+      payment_info, // ✅ Ganti dari bank_account_info & ewallet_info
       goods_description,
       volunteer_needs,
       volunteer_slots,
@@ -529,7 +830,6 @@ export const createCampaign = async (req, res) => {
       });
     }
 
-    // 🔥 PERBAIKAN: Gunakan req.user.id, BUKAN req.user.user_id
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ 
@@ -542,22 +842,20 @@ export const createCampaign = async (req, res) => {
     if (community_id) {
       const communityIdInt = parseInt(community_id);
       
-      // Cek apakah user adalah member aktif
       const isMember = await prisma.community_members.findUnique({
         where: {
           community_id_user_id: {
             community_id: communityIdInt,
-            user_id: userId  // ✅ userId sudah benar (dari req.user.id)
+            user_id: userId
           }
         }
       });
 
-      // Cek apakah user adalah admin community
       const isAdmin = await prisma.community_admins.findUnique({
         where: {
           community_id_user_id: {
             community_id: communityIdInt,
-            user_id: userId  // ✅ userId sudah benar
+            user_id: userId
           }
         }
       });
@@ -569,7 +867,7 @@ export const createCampaign = async (req, res) => {
         });
       }
 
-      // ✅ CEK BATAS CAMPAIGN AKTIF (opsional)
+      // ✅ CEK BATAS CAMPAIGN AKTIF
       const activeCampaigns = await prisma.donation_campaigns.count({
         where: {
           community_id: communityIdInt,
@@ -597,27 +895,26 @@ export const createCampaign = async (req, res) => {
       });
     }
 
-    // ✅ CREATE CAMPAIGN
+    // ✅ CREATE CAMPAIGN - Perbaikan field
     const campaign = await prisma.donation_campaigns.create({
       data: {
-        creator_id: userId,  // 🔥 userId dari req.user.id
+        creator_id: userId,
         community_id: community_id ? parseInt(community_id) : null,
         title: title.trim(),
         description: description || null,
         donation_type: donation_type,
         target_amount: target_amount ? parseFloat(target_amount) : null,
-        bank_account_info: bank_account_info || null,
-        ewallet_info: ewallet_info || null,
+        payment_info: payment_info || null, // ✅ Ganti dengan payment_info
         goods_description: goods_description || null,
         volunteer_needs: volunteer_needs || null,
         volunteer_slots: volunteer_slots ? parseInt(volunteer_slots) : null,
         start_date: startDate,
         end_date: endDate,
         status: 'pending',
-        approval_status: 'pending',
+        approval_status: 'pending', // ✅ Sudah ada di DB
         collected_amount: 0,
-        total_donors: 0,
-        volunteer_registered: 0
+        total_donors: 0
+        // ❌ HAPUS: volunteer_registered (tidak ada di DB)
       },
       include: {
         communities: {
@@ -693,8 +990,7 @@ export const updateCampaign = async (req, res) => {
             title,
             description,
             target_amount,
-            bank_account_info,
-            ewallet_info,
+            payment_info, // ✅ Ganti dari bank_account_info & ewallet_info
             goods_description,
             volunteer_needs,
             volunteer_slots,
@@ -737,8 +1033,7 @@ export const updateCampaign = async (req, res) => {
             title: title ? title.trim() : undefined,
             description: description !== undefined ? description : undefined,
             target_amount: target_amount !== undefined ? parseFloat(target_amount) : undefined,
-            bank_account_info: bank_account_info !== undefined ? bank_account_info : undefined,
-            ewallet_info: ewallet_info !== undefined ? ewallet_info : undefined,
+            payment_info: payment_info !== undefined ? payment_info : undefined, // ✅ Ganti
             goods_description: goods_description !== undefined ? goods_description : undefined,
             volunteer_needs: volunteer_needs !== undefined ? volunteer_needs : undefined,
             volunteer_slots: volunteer_slots !== undefined ? parseInt(volunteer_slots) : undefined,
@@ -970,7 +1265,8 @@ export const approveCampaign = async (req, res) => {
                 approved_by: userId,
                 approved_at: new Date(),
                 rejection_reason: null,
-                updated_at: new Date()
+                updated_at: new Date(),
+                status: 'active',
             },
             include: {
                 communities: {
@@ -1241,4 +1537,20 @@ export const getPendingCampaigns = async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
+};
+
+const createNotification = async (data) => {
+    // Implementasi sesuai kebutuhan
+    // Pastikan model notifications memiliki field yang sesuai
+    return await prisma.notifications.create({
+        data: {
+            type: data.type,
+            title: data.title,
+            content: data.content,
+            target_community_id: data.target_community_id,
+            target_role: data.target_role || 'admin',
+            created_by: data.created_by,
+            is_global: false
+        }
+    });
 };

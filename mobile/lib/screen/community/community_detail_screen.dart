@@ -21,6 +21,7 @@ import '../post_detail_screen.dart';
 import '../edit_post_screen.dart';
 import 'community_members_screen.dart';
 import 'community_manage_admins_screen.dart';
+import '../campaign_list_screen.dart';
 
 class CommunityDetailScreen extends StatefulWidget {
   final int communityId;
@@ -34,6 +35,14 @@ class CommunityDetailScreen extends StatefulWidget {
 
   @override
   State<CommunityDetailScreen> createState() => _CommunityDetailScreenState();
+}
+
+int? _parseInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is double) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
 }
 
 class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
@@ -67,8 +76,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
 
   String get _communityName =>
       (_community?['community_name'] as String?)?.trim() ??
-          widget.communityName ??
-          'Detail Komunitas';
+      widget.communityName ??
+      'Detail Komunitas';
 
   // ============ LIFECYCLE ============
   @override
@@ -130,6 +139,109 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
         _loadPosts(reset: true);
       }
     });
+  }
+
+  void _openCampaignList() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CampaignListScreen(
+          communityId: widget.communityId,
+          communityName: _communityName,
+          isMember: _isMember,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCampaignsEntry() {
+    final activeCampaigns =
+        _parseInt(_community?['active_campaigns_count']) ?? 0;
+    final pendingCampaigns =
+        _parseInt(_community?['pending_campaigns_count']) ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _openCampaignList,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  AppColors.primary.withOpacity(0.78)
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.volunteer_activism_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Donasi & Campaign',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _CampaignBadge(
+                            label: '$activeCampaigns Donasi Aktif',
+                            background: Colors.white,
+                            textColor: AppColors.primary,
+                          ),
+                          if (_canManage && pendingCampaigns > 0)
+                            _CampaignBadge(
+                              label: '$pendingCampaigns Menunggu Persetujuan',
+                              background: Colors.orange.shade400,
+                              textColor: Colors.white,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openPostDetail(Map<String, dynamic> post) {
@@ -255,7 +367,10 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
         if (reset) _posts.clear();
         final filteredPosts = _isMember
             ? result.posts
-            : result.posts.where((p) => p['visibility'] == 'public' || p['visibility'] == null).toList();
+            : result.posts
+                .where((p) =>
+                    p['visibility'] == 'public' || p['visibility'] == null)
+                .toList();
         _posts.addAll(filteredPosts);
         _postPage = result.page;
         _postTotalPages = result.totalPages;
@@ -480,10 +595,10 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
       ),
       floatingActionButton: _canPost
           ? FloatingActionButton(
-        onPressed: _openCreatePost,
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
-      )
+              onPressed: _openCreatePost,
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.add, color: Colors.white),
+            )
           : null,
       body: RefreshIndicator(
         color: AppColors.primary,
@@ -499,7 +614,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     }
 
     final community = _community!;
-    final name = (community['community_name'] as String?)?.trim() ?? 'Tanpa Nama';
+    final name =
+        (community['community_name'] as String?)?.trim() ?? 'Tanpa Nama';
     final description = (community['description'] as String?)?.trim();
     final kecamatan = (community['kecamatan'] as String?)?.trim();
     final address = (community['address'] as String?)?.trim();
@@ -595,6 +711,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                     ),
                     const SizedBox(height: 20),
 
+                    _buildCampaignsEntry(),
+
                     // DESCRIPTION
                     if (description != null && description.isNotEmpty) ...[
                       _SectionTitle('Tentang Komunitas'),
@@ -682,7 +800,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                   ),
                 if (!_isMember)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(8),
@@ -726,7 +845,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                 final index = entry.key;
                 final post = entry.value;
                 final postId = post['post_id'] as int;
-                final isPublic = post['visibility'] == 'public' || post['visibility'] == null;
+                final isPublic = post['visibility'] == 'public' ||
+                    post['visibility'] == null;
                 final bool canInteract = _isMember && isPublic;
 
                 return Padding(
@@ -739,9 +859,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                     isAdmin: _canManage,
                     onTap: () => _openPostDetail(post),
                     onLike: canInteract ? () => _handleLike(postId) : () {},
-                    onComment: canInteract ? () => _openPostDetail(post) : () {},
+                    onComment:
+                        canInteract ? () => _openPostDetail(post) : () {},
                     onEdit: canInteract ? () => _handleEditPost(post) : null,
-                    onDelete: canInteract ? () => _handleDeletePost(postId) : null,
+                    onDelete:
+                        canInteract ? () => _handleDeletePost(postId) : null,
                     onRegisterEvent: null,
                     onCancelEvent: null,
                   ),
@@ -812,6 +934,37 @@ class _SectionTitle extends StatelessWidget {
         fontSize: 13,
         fontWeight: FontWeight.w600,
         color: Colors.black87,
+      ),
+    );
+  }
+}
+
+class _CampaignBadge extends StatelessWidget {
+  final String label;
+  final Color background;
+  final Color textColor;
+
+  const _CampaignBadge({
+    required this.label,
+    required this.background,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.poppins(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
       ),
     );
   }

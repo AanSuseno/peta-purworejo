@@ -134,10 +134,11 @@ export const getCommunityById = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const communityId = parseInt(id);
 
         const community = await prisma.communities.findUnique({
             where: {
-                community_id: parseInt(id)
+                community_id: communityId
             },
             include: {
                 categories: {
@@ -156,7 +157,9 @@ export const getCommunityById = async (req, res) => {
                     }
                 },
                 community_members: {
-                    where: { status: 'active' },
+                    where: {
+                        status: 'active'
+                    },
                     include: {
                         users: {
                             select: {
@@ -184,16 +187,22 @@ export const getCommunityById = async (req, res) => {
                     }
                 },
                 community_locations: {
-                    where: { is_primary: true }
+                    where: {
+                        is_primary: true
+                    }
                 },
                 _count: {
                     select: {
                         community_members: {
-                            where: { status: 'active' }
+                            where: {
+                                status: 'active'
+                            }
                         },
                         posts: {
-                            where: { status: 'active' }
-                        },
+                            where: {
+                                status: 'active'
+                            }
+                        }
                     }
                 }
             }
@@ -206,27 +215,57 @@ export const getCommunityById = async (req, res) => {
             });
         }
 
-        // Cek status user untuk info tambahan
-        const isMember = await prisma.community_members.findFirst({
-            where: {
-                community_id: parseInt(id),
-                user_id: userId,
-                status: 'active'
-            }
-        });
+        // Jalankan query tambahan secara paralel
+        const [
+            isMember,
+            isAdmin,
+            pendingCampaignsCount,
+            activeCampaignsCount
+        ] = await Promise.all([
+            prisma.community_members.findFirst({
+                where: {
+                    community_id: communityId,
+                    user_id: userId,
+                    status: 'active'
+                }
+            }),
 
-        const isAdmin = await prisma.community_admins.findFirst({
-            where: {
-                community_id: parseInt(id),
-                user_id: userId
-            }
-        });
+            prisma.community_admins.findFirst({
+                where: {
+                    community_id: communityId,
+                    user_id: userId
+                }
+            }),
+
+            // Jumlah campaign pending
+            prisma.donation_campaigns.count({
+                where: {
+                    community_id: communityId,
+                    approval_status: 'pending'
+                }
+            }),
+
+            // Jumlah campaign aktif
+            prisma.donation_campaigns.count({
+                where: {
+                    community_id: communityId,
+                    status: 'active'
+                }
+            })
+        ]);
 
         const formattedCommunity = {
             ...community,
+
             member_count: community._count.community_members,
             post_count: community._count.posts,
+
+            // Tambahan yang bisa diakses Flutter
+            pending_campaigns_count: pendingCampaignsCount,
+            active_campaigns_count: activeCampaignsCount,
+
             _count: undefined,
+
             user_access: {
                 is_member: !!isMember,
                 is_admin: !!isAdmin,
@@ -246,10 +285,13 @@ export const getCommunityById = async (req, res) => {
 
     } catch (error) {
         console.error("Get Community By ID Error:", error);
+
         return res.status(500).json({
             success: false,
             message: "Gagal mengambil data komunitas",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: process.env.NODE_ENV === 'development'
+                ? error.message
+                : undefined
         });
     }
 };

@@ -131,12 +131,12 @@ model donation_campaigns {
   end_date                                    DateTime?            @db.Date
   status                                      campaign_status_enum @default(active)
   total_donors                                Int                  @default(0)
-  approval_status                             String?              @default("pending") @db.VarChar(20)
   approved_by                                 Int?
   approved_at                                 DateTime?            @db.Timestamp(6)
   rejection_reason                            String?
   created_at                                  DateTime             @default(now()) @db.Timestamp(6)
   updated_at                                  DateTime             @default(now()) @db.Timestamp(6)
+  approval_status                             String?              @default("pending") @db.VarChar(20)
   users_donation_campaigns_approved_byTousers users?               @relation("donation_campaigns_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   communities                                 communities?         @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
   users                                       users                @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)

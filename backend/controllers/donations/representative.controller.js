@@ -56,7 +56,7 @@ export const updateDonationRepresentative = async (req, res) => {
                 updated_at: new Date()
             },
             include: {
-                users_donations_representative_idTousers: {
+                users_donations_donor_idTousers: {
                     select: {
                         user_id: true,
                         full_name: true,
@@ -138,7 +138,7 @@ export const updateDonationRepresentationStatus = async (req, res) => {
                 updated_at: new Date()
             },
             include: {
-                users_donations_representative_idTousers: {
+                users_donations_donor_idTousers: {
                     select: {
                         user_id: true,
                         full_name: true,
@@ -203,7 +203,7 @@ export const verifyRepresentative = async (req, res) => {
                 updated_at: new Date()
             },
             include: {
-                users_donations_representative_idTousers: {
+                users_donations_donor_idTousers: {
                     select: {
                         user_id: true,
                         full_name: true,

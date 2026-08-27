@@ -53,6 +53,8 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   final TextEditingController _donorPhoneController = TextEditingController();
   final TextEditingController _donorEmailController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _deliveryNotesController =
+      TextEditingController();
 
   Map<String, dynamic>? _campaign;
   Map<String, dynamic>? _summary;
@@ -62,6 +64,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   bool _isDonating = false;
   bool _isVolunteer = false;
   bool _isProcessingApproval = false;
+  bool _isAnonymous = false;
   String? _error;
 
   // Donation type
@@ -73,7 +76,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   double _goodsQuantity = 0;
   String _goodsUnit = 'kg';
   String _deliveryMethod = 'dropoff';
-  String _deliveryAddress = '';
+  String? deliveryNotes;
   File? _goodsPhoto;
   File? _proofImage;
 
@@ -97,6 +100,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     _donorNameController.dispose();
     _donorPhoneController.dispose();
     _donorEmailController.dispose();
+    _deliveryNotesController.dispose();
     _amountController.dispose();
     super.dispose();
   }
@@ -151,9 +155,9 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _campaign = campaign;
         _summary = summary;
         _donations = (donations['data'] as List?)
-            ?.whereType<Map>()
-            .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-            .toList() ??
+                ?.whereType<Map>()
+                .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+                .toList() ??
             [];
         _isLoading = false;
       });
@@ -235,10 +239,10 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   /// Dengan memanggil `setModalState` (dari `StatefulBuilder` yang
   /// membungkus isi sheet), preview gambar langsung muncul di sheet.
   Future<void> _pickImage(
-      ImageSource source,
-      bool isGoods, {
-        StateSetter? setModalState,
-      }) async {
+    ImageSource source,
+    bool isGoods, {
+    StateSetter? setModalState,
+  }) async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: source, imageQuality: 85);
     if (picked != null) {
@@ -269,39 +273,50 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
   }
 
-  Future<void> _submitMoneyDonation({StateSetter? setModalState}) async {
-    // Validasi
+  Future<void> _submitMoneyDonation({
+    StateSetter? setModalState,
+  }) async {
     if (_donorNameController.text.trim().isEmpty) {
       _showError('Nama donatur wajib diisi');
       return;
     }
+
     if (_donorPhoneController.text.trim().isEmpty) {
       _showError('Nomor HP donatur wajib diisi');
       return;
     }
+
     if (_donorEmailController.text.trim().isEmpty ||
         !_donorEmailController.text.contains('@')) {
       _showError('Email donatur wajib diisi dan valid');
       return;
     }
-    final amount = double.tryParse(_amountController.text);
+
+    final amount = double.tryParse(
+      _amountController.text
+          .replaceAll('Rp', '')
+          .replaceAll('.', '')
+          .replaceAll(',', '.')
+          .trim(),
+    );
+
     if (amount == null || amount <= 0) {
-      _showError('Jumlah donasi harus diisi dan lebih dari 0');
-      return;
-    }
-    if (_proofImage == null) {
-      _showError('Bukti transfer wajib diupload');
+      _showError('Jumlah donasi harus lebih dari 0');
       return;
     }
 
-    // 🔥 Validasi ukuran file (maks 5MB)
-    final fileSize = await _proofImage!.length();
-    if (fileSize > 5 * 1024 * 1024) {
-      _showError('Ukuran file bukti transfer maksimal 5MB');
-      return;
+    // Bukti transfer opsional, tapi kalau dipilih maksimal 5 MB
+    if (_proofImage != null) {
+      final fileSize = await _proofImage!.length();
+
+      if (fileSize > 5 * 1024 * 1024) {
+        _showError('Ukuran bukti transfer maksimal 5MB');
+        return;
+      }
     }
 
     final token = await context.read<AuthProvider>().getToken();
+
     if (token == null) {
       _showError('Sesi tidak ditemukan, silakan login ulang');
       return;
@@ -315,65 +330,70 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         token: token,
         campaignId: widget.campaignId,
         amount: amount,
-        paymentMethod: 'bank_transfer',
         donorName: _donorNameController.text.trim(),
         donorPhone: _donorPhoneController.text.trim(),
         donorEmail: _donorEmailController.text.trim(),
         communityId: widget.communityId,
-        proofImage:
-        _proofImage, // 🔥 Ini akan dikirim dengan field 'proof_image'
+        isAnonymous: _isAnonymous,
+        proofImage: _proofImage,
       );
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Donasi berhasil dibuat, menunggu verifikasi'),
+          content: Text(
+            'Donasi berhasil dibuat',
+          ),
         ),
       );
-      Navigator.of(context).pop(); // tutup bottom sheet
-      Navigator.of(context).pop(true); // kembali dari detail screen
+
+      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
     } catch (e) {
-      _showError(e.toString().replaceFirst('Exception: ', ''));
+      _showError(
+        e.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+
       setModalState?.call(() {});
     }
   }
 
-  Future<void> _submitGoodsDonation({StateSetter? setModalState}) async {
-    // Validasi
+  Future<void> _submitGoodsDonation({
+    StateSetter? setModalState,
+  }) async {
     if (_donorNameController.text.trim().isEmpty) {
       _showError('Nama donatur wajib diisi');
       return;
     }
+
     if (_donorPhoneController.text.trim().isEmpty) {
       _showError('Nomor HP donatur wajib diisi');
       return;
     }
+
     if (_donorEmailController.text.trim().isEmpty ||
         !_donorEmailController.text.contains('@')) {
       _showError('Email donatur wajib diisi dan valid');
       return;
     }
+
     if (_goodsName.trim().isEmpty) {
       _showError('Nama barang wajib diisi');
       return;
     }
+
     if (_goodsQuantity <= 0) {
       _showError('Jumlah barang harus lebih dari 0');
       return;
     }
 
-    // 🔥 Validasi ukuran file (opsional, maks 5MB)
-    if (_goodsPhoto != null) {
-      final fileSize = await _goodsPhoto!.length();
-      if (fileSize > 5 * 1024 * 1024) {
-        _showError('Ukuran file foto barang maksimal 5MB');
-        return;
-      }
-    }
-
     final token = await context.read<AuthProvider>().getToken();
+
     if (token == null) {
       _showError('Sesi tidak ditemukan, silakan login ulang');
       return;
@@ -386,31 +406,38 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       await _service.donateGoods(
         token: token,
         campaignId: widget.campaignId,
-        goodsType: _goodsType,
         goodsName: _goodsName.trim(),
         goodsQuantity: _goodsQuantity,
         goodsUnit: _goodsUnit,
-        deliveryMethod: _deliveryMethod,
         donorName: _donorNameController.text.trim(),
         donorPhone: _donorPhoneController.text.trim(),
         donorEmail: _donorEmailController.text.trim(),
-        deliveryAddress: _deliveryAddress.trim(),
+        deliveryNotes: _deliveryNotesController.text.trim().isEmpty
+            ? null
+            : _deliveryNotesController.text.trim(),
         communityId: widget.communityId,
-        goodsPhoto: _goodsPhoto,
+        isAnonymous: _isAnonymous,
       );
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Donasi barang berhasil dibuat, menunggu verifikasi'),
+          content: Text('Donasi barang berhasil dibuat'),
         ),
       );
+
       Navigator.of(context).pop();
       Navigator.of(context).pop(true);
     } catch (e) {
-      _showError(e.toString().replaceFirst('Exception: ', ''));
+      _showError(
+        e.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+
       setModalState?.call(() {});
     }
   }
@@ -441,7 +468,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content:
-          Text('Berhasil mendaftar sebagai volunteer, menunggu konfirmasi'),
+              Text('Berhasil mendaftar sebagai volunteer, menunggu konfirmasi'),
         ),
       );
       Navigator.of(context).pop();
@@ -640,7 +667,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
             Text(
               'Alasan: $rejectionReason',
               style:
-              GoogleFonts.poppins(fontSize: 12, color: Colors.red.shade600),
+                  GoogleFonts.poppins(fontSize: 12, color: Colors.red.shade600),
             ),
           ],
           const SizedBox(height: 12),
@@ -698,17 +725,23 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     _donorPhoneController.clear();
     _donorEmailController.clear();
     _amountController.clear();
+
     _goodsName = '';
     _goodsQuantity = 0;
-    _deliveryAddress = '';
-    _goodsPhoto = null;
+    _goodsUnit = 'kg';
+
+    _deliveryNotesController.clear();
+
     _proofImage = null;
+
+    _isAnonymous = false;
+
     _volunteerAvailability = '';
     _volunteerSkills = '';
     _volunteerExperience = '';
     _volunteerNotes = '';
 
-    // 🔥 Isi ulang dengan data user
+    // 🔥 Isi ulang dengan data userf
     final authProvider = context.read<AuthProvider>();
     _donorNameController.text = authProvider.displayName;
     _donorEmailController.text = authProvider.email;
@@ -751,8 +784,8 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   _donationType == 'money'
                       ? 'Donasi Uang'
                       : _donationType == 'goods'
-                      ? 'Donasi Barang'
-                      : 'Daftar Relawan',
+                          ? 'Donasi Barang'
+                          : 'Daftar Relawan',
                   style: GoogleFonts.poppins(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -794,28 +827,80 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
 
   Widget _buildMoneyDonationForm(StateSetter setModalState) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _formField('Nama Donatur *', _donorNameController),
+        _formField(
+          'Nama Donatur *',
+          _donorNameController,
+        ),
         const SizedBox(height: 12),
-        _formField('Nomor HP *', _donorPhoneController,
-            keyboardType: TextInputType.phone),
+        _formField(
+          'Nomor HP *',
+          _donorPhoneController,
+          keyboardType: TextInputType.phone,
+        ),
         const SizedBox(height: 12),
-        _formField('Email *', _donorEmailController,
-            keyboardType: TextInputType.emailAddress),
+        _formField(
+          'Email *',
+          _donorEmailController,
+          keyboardType: TextInputType.emailAddress,
+        ),
         const SizedBox(height: 12),
-        _formField('Jumlah Donasi (Rp) *', _amountController,
-            keyboardType: TextInputType.number, prefixText: 'Rp '),
+        _formField(
+          'Jumlah Donasi (Rp) *',
+          _amountController,
+          keyboardType: const TextInputType.numberWithOptions(
+            decimal: true,
+          ),
+          prefixText: 'Rp ',
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Donasi sebagai anonim',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          subtitle: Text(
+            'Nama Anda tidak akan ditampilkan kepada publik',
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          value: _isAnonymous,
+          activeColor: AppColors.primary,
+          onChanged: (value) {
+            setState(() {
+              _isAnonymous = value;
+            });
+
+            setModalState(() {});
+          },
+        ),
         const SizedBox(height: 12),
         _buildImagePicker(
-          label: 'Upload Bukti Transfer *',
+          label: 'Upload Bukti Transfer (Opsional)',
           imageFile: _proofImage,
-          onPick: () =>
-              _pickImage(ImageSource.gallery, false, setModalState: setModalState),
-          onCamera: () =>
-              _pickImage(ImageSource.camera, false, setModalState: setModalState),
+          onPick: () => _pickImage(
+            ImageSource.gallery,
+            false,
+            setModalState: setModalState,
+          ),
+          onCamera: () => _pickImage(
+            ImageSource.camera,
+            false,
+            setModalState: setModalState,
+          ),
         ),
         const SizedBox(height: 20),
-        _buildSubmitButton('Kirim Donasi', setModalState),
+        _buildSubmitButton(
+          'Kirim Donasi',
+          setModalState,
+        ),
       ],
     );
   }
@@ -824,45 +909,33 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _formField('Nama Donatur *', _donorNameController),
+        _formField(
+          'Nama Donatur *',
+          _donorNameController,
+        ),
         const SizedBox(height: 12),
-        _formField('Nomor HP *', _donorPhoneController,
-            keyboardType: TextInputType.phone),
+        _formField(
+          'Nomor HP *',
+          _donorPhoneController,
+          keyboardType: TextInputType.phone,
+        ),
         const SizedBox(height: 12),
-        _formField('Email *', _donorEmailController,
-            keyboardType: TextInputType.emailAddress),
-        const SizedBox(height: 12),
-        _fieldLabel('Tipe Barang *'),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButtonFormField<String>(
-              value: _goodsType,
-              isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: 'food', child: Text('Makanan')),
-                DropdownMenuItem(value: 'clothing', child: Text('Pakaian')),
-                DropdownMenuItem(value: 'medicine', child: Text('Obat-obatan')),
-                DropdownMenuItem(value: 'other', child: Text('Lainnya')),
-              ],
-              onChanged: (v) {
-                setState(() => _goodsType = v!);
-                setModalState(() {});
-              },
-            ),
-          ),
+        _formField(
+          'Email *',
+          _donorEmailController,
+          keyboardType: TextInputType.emailAddress,
         ),
         const SizedBox(height: 12),
         _fieldLabel('Nama Barang *'),
         TextFormField(
           initialValue: _goodsName,
-          onChanged: (v) => _goodsName = v,
+          onChanged: (value) {
+            _goodsName = value;
+          },
           style: GoogleFonts.poppins(fontSize: 13.5),
-          decoration: _inputDecoration('Masukkan nama barang'),
+          decoration: _inputDecoration(
+            'Contoh: Beras',
+          ),
         ),
         const SizedBox(height: 12),
         Row(
@@ -875,13 +948,17 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   _fieldLabel('Jumlah *'),
                   TextFormField(
                     initialValue:
-                    _goodsQuantity > 0 ? _goodsQuantity.toString() : '',
-                    onChanged: (v) {
-                      _goodsQuantity = double.tryParse(v) ?? 0;
+                        _goodsQuantity > 0 ? _goodsQuantity.toString() : '',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (value) {
+                      _goodsQuantity = double.tryParse(value) ?? 0;
                     },
                     style: GoogleFonts.poppins(fontSize: 13.5),
-                    keyboardType: TextInputType.number,
-                    decoration: _inputDecoration('Jumlah'),
+                    decoration: _inputDecoration(
+                      'Jumlah',
+                    ),
                   ),
                 ],
               ),
@@ -892,29 +969,44 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _fieldLabel('Satuan *'),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButtonFormField<String>(
-                        value: _goodsUnit,
-                        isExpanded: true,
-                        items: const [
-                          DropdownMenuItem(value: 'kg', child: Text('kg')),
-                          DropdownMenuItem(value: 'pcs', child: Text('pcs')),
-                          DropdownMenuItem(
-                              value: 'liter', child: Text('liter')),
-                          DropdownMenuItem(value: 'unit', child: Text('unit')),
-                        ],
-                        onChanged: (v) {
-                          setState(() => _goodsUnit = v!);
-                          setModalState(() {});
-                        },
+                  DropdownButtonFormField<String>(
+                    value: _goodsUnit,
+                    decoration: _inputDecoration('Satuan'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'kg',
+                        child: Text('kg'),
                       ),
-                    ),
+                      DropdownMenuItem(
+                        value: 'pcs',
+                        child: Text('pcs'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'liter',
+                        child: Text('liter'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'unit',
+                        child: Text('unit'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'box',
+                        child: Text('box'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'pack',
+                        child: Text('pack'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+
+                      setState(() {
+                        _goodsUnit = value;
+                      });
+
+                      setModalState(() {});
+                    },
                   ),
                 ],
               ),
@@ -922,50 +1014,47 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        _fieldLabel('Metode Pengiriman *'),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(12),
+        _fieldLabel('Catatan Pengiriman'),
+        TextFormField(
+          controller: _deliveryNotesController,
+          maxLines: 3,
+          style: GoogleFonts.poppins(fontSize: 13.5),
+          decoration: _inputDecoration(
+            'Contoh: Barang akan dikirim hari Sabtu',
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButtonFormField<String>(
-              value: _deliveryMethod,
-              isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: 'pickup', child: Text('Diambil')),
-                DropdownMenuItem(
-                    value: 'dropoff', child: Text('Antar ke Lokasi')),
-                DropdownMenuItem(value: 'courier', child: Text('Kurir')),
-              ],
-              onChanged: (v) {
-                setState(() => _deliveryMethod = v!);
-                setModalState(() {});
-              },
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Donasi sebagai anonim',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        _fieldLabel('Alamat Pengiriman'),
-        TextFormField(
-          initialValue: _deliveryAddress,
-          onChanged: (v) => _deliveryAddress = v,
-          maxLines: 2,
-          style: GoogleFonts.poppins(fontSize: 13.5),
-          decoration: _inputDecoration('Masukkan alamat pengiriman'),
-        ),
-        const SizedBox(height: 12),
-        _buildImagePicker(
-          label: 'Upload Foto Barang (Opsional)',
-          imageFile: _goodsPhoto,
-          onPick: () =>
-              _pickImage(ImageSource.gallery, true, setModalState: setModalState),
-          onCamera: () =>
-              _pickImage(ImageSource.camera, true, setModalState: setModalState),
+          subtitle: Text(
+            'Nama Anda tidak akan ditampilkan kepada publik',
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          value: _isAnonymous,
+          activeColor: AppColors.primary,
+          onChanged: (value) {
+            setState(() {
+              _isAnonymous = value;
+            });
+
+            setModalState(() {});
+          },
         ),
         const SizedBox(height: 20),
-        _buildSubmitButton('Kirim Donasi Barang', setModalState),
+        _buildSubmitButton(
+          'Kirim Donasi Barang',
+          setModalState,
+        ),
       ],
     );
   }
@@ -1026,23 +1115,23 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
           keyboardType: keyboardType,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration:
-          _inputDecoration('Masukkan $label', prefixText: prefixText),
+              _inputDecoration('Masukkan $label', prefixText: prefixText),
         ),
       ],
     );
   }
 
   Widget _fieldLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: Text(
-      text,
-      style: GoogleFonts.poppins(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: Colors.grey.shade700,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          text,
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      );
 
   InputDecoration _inputDecoration(String hint, {String? prefixText}) {
     return InputDecoration(
@@ -1085,54 +1174,56 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
             ),
             child: imageFile != null
                 ? ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.file(
-                imageFile,
-                fit: BoxFit.contain, // 🔥 UBAH DARI 'cover' KE 'contain'
-                width: double.infinity,
-                height: double.infinity,
-              ),
-            )
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      imageFile,
+                      fit: BoxFit.contain, // 🔥 UBAH DARI 'cover' KE 'contain'
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
+                  )
                 : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.add_photo_alternate_outlined,
-                    size: 28, color: Colors.grey.shade400),
-                const SizedBox(height: 4),
-                Text(
-                  'Tap untuk pilih gambar',
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: Colors.grey.shade500,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined,
+                          size: 28, color: Colors.grey.shade400),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap untuk pilih gambar',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton.icon(
+                            onPressed: onPick,
+                            icon: const Icon(Icons.photo_library, size: 16),
+                            label: const Text('Galeri'),
+                            style: TextButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: onCamera,
+                            icon: const Icon(Icons.camera_alt, size: 16),
+                            label: const Text('Kamera'),
+                            style: TextButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TextButton.icon(
-                      onPressed: onPick,
-                      icon: const Icon(Icons.photo_library, size: 16),
-                      label: const Text('Galeri'),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: onCamera,
-                      icon: const Icon(Icons.camera_alt, size: 16),
-                      label: const Text('Kamera'),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
           ),
         ),
         // 🔥 Tombol ganti gambar saat sudah ada preview, supaya user tidak
@@ -1174,8 +1265,9 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       width: double.infinity,
       height: 48,
       child: ElevatedButton(
-        onPressed:
-        _isSubmitting ? null : () => _submitDonation(setModalState: setModalState),
+        onPressed: _isSubmitting
+            ? null
+            : () => _submitDonation(setModalState: setModalState),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
@@ -1186,18 +1278,18 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         ),
         child: _isSubmitting
             ? const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(
-              strokeWidth: 2, color: Colors.white),
-        )
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              )
             : Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
       ),
     );
   }
@@ -1233,7 +1325,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   value: 'edit',
                   child: Row(
                     children: [
-                      Icon(Icons.edit_outlined, size: 18),
+                      Icon(Icons.edit_outlined, size: 18, color: Colors.black),
                       SizedBox(width: 8),
                       Text('Edit Campaign'),
                     ],
@@ -1255,54 +1347,54 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       ),
       bottomSheet: _campaign?['status'] == 'active' && !_isLoading
           ? SafeArea(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _showDonationDialog,
-              icon: Icon(
-                _campaign?['donation_type'] == 'money'
-                    ? Icons.attach_money
-                    : _campaign?['donation_type'] == 'goods'
-                    ? Icons.inventory_2_outlined
-                    : Icons.handshake_outlined,
-                size: 18,
-              ),
-              label: Text(
-                _campaign?['donation_type'] == 'money'
-                    ? 'Donasi Sekarang'
-                    : _campaign?['donation_type'] == 'goods'
-                    ? 'Donasi Barang'
-                    : 'Daftar Relawan',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: _showDonationDialog,
+                    icon: Icon(
+                      _campaign?['donation_type'] == 'money'
+                          ? Icons.attach_money
+                          : _campaign?['donation_type'] == 'goods'
+                              ? Icons.inventory_2_outlined
+                              : Icons.handshake_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _campaign?['donation_type'] == 'money'
+                          ? 'Donasi Sekarang'
+                          : _campaign?['donation_type'] == 'goods'
+                              ? 'Donasi Barang'
+                              : 'Daftar Relawan',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-        ),
-      )
+            )
           : null,
       body: _isLoading ? _buildShimmerLoading() : _buildBody(),
     );
@@ -1410,7 +1502,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       enabled: true,
       child: SingleChildScrollView(
         padding:
-        EdgeInsets.only(bottom: 80 + MediaQuery.of(context).padding.bottom),
+            EdgeInsets.only(bottom: 80 + MediaQuery.of(context).padding.bottom),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1577,41 +1669,41 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   // Info rows (4 items)
                   ...List.generate(
                       4,
-                          (index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            Container(
-                              height: 18,
-                              width: 18,
-                              decoration: const BoxDecoration(
-                                color: Colors.grey,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    height: 12,
-                                    width: 60,
-                                    color: Colors.grey.shade300,
+                      (index) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Container(
+                                  height: 18,
+                                  width: 18,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.grey,
+                                    shape: BoxShape.circle,
                                   ),
-                                  const SizedBox(height: 2),
-                                  Container(
-                                    height: 14,
-                                    width: 120,
-                                    color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        height: 12,
+                                        width: 60,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        height: 14,
+                                        width: 120,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      )),
+                          )),
                 ],
               ),
             ),
@@ -1637,55 +1729,55 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   // Donation items (5 items)
                   ...List.generate(
                       4,
-                          (index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          children: [
-                            Container(
-                              height: 28,
-                              width: 28,
-                              decoration: const BoxDecoration(
-                                color: Colors.grey,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    height: 14,
-                                    width: 80 + (index % 2 == 0 ? 40 : 0),
-                                    color: Colors.grey.shade300,
+                      (index) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              children: [
+                                Container(
+                                  height: 28,
+                                  width: 28,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.grey,
+                                    shape: BoxShape.circle,
                                   ),
-                                  const SizedBox(height: 2),
-                                  Container(
-                                    height: 10,
-                                    width: 100,
-                                    color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        height: 14,
+                                        width: 80 + (index % 2 == 0 ? 40 : 0),
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        height: 10,
+                                        width: 100,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                ),
+                                Container(
+                                  height: 14,
+                                  width: 70,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  height: 18,
+                                  width: 24,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ],
                             ),
-                            Container(
-                              height: 14,
-                              width: 70,
-                              color: Colors.grey.shade300,
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              height: 18,
-                              width: 24,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade300,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )),
+                          )),
                 ],
               ),
             ),
@@ -2026,7 +2118,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                             CircleAvatar(
                               radius: 14,
                               backgroundColor:
-                              AppColors.primary.withOpacity(0.1),
+                                  AppColors.primary.withOpacity(0.1),
                               child: Text(
                                 donorName.isNotEmpty ? donorName[0] : '?',
                                 style: GoogleFonts.poppins(
@@ -2086,15 +2178,15 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                                 donationStatus == 'confirmed'
                                     ? '✓'
                                     : donationStatus == 'pending'
-                                    ? '⏳'
-                                    : '✗',
+                                        ? '⏳'
+                                        : '✗',
                                 style: GoogleFonts.poppins(
                                   fontSize: 10,
                                   color: donationStatus == 'confirmed'
                                       ? Colors.green
                                       : donationStatus == 'pending'
-                                      ? Colors.orange
-                                      : Colors.red,
+                                          ? Colors.orange
+                                          : Colors.red,
                                 ),
                               ),
                             ),

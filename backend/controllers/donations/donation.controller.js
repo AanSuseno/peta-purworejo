@@ -21,7 +21,8 @@ export const createDonation = async (req, res) => {
       donor_email,
       is_anonymous,
       donation_purpose,
-      community_id
+      community_id,
+      delivery_notes
     } = req.body;
 
     const campaignId = parseInt(id);
@@ -120,37 +121,46 @@ export const createDonation = async (req, res) => {
         campaign_id: campaignId,
         donor_id: req.user?.user_id || null,
         donation_type,
+
         amount: amount ? parseFloat(amount) : null,
-        payment_method,
+
         proof_image,
-        goods_type,
+
         goods_name,
-        goods_quantity: goods_quantity ? parseInt(goods_quantity) : null,
+        goods_quantity: goods_quantity
+          ? parseInt(goods_quantity)
+          : null,
         goods_unit,
-        goods_photo,
-        delivery_method,
-        delivery_address,
-        volunteer_availability,
-        volunteer_skill,
-        volunteer_notes,
-        donor_name: is_anonymous ? 'Anonymous' : (donor_name || req.user?.full_name),
-        donor_phone: is_anonymous ? null : (donor_phone || req.user?.phone_number),
-        donor_email: is_anonymous ? null : (donor_email || req.user?.email),
+
+        delivery_notes,
+
+        donor_name: isAnonymousBool
+          ? 'Anonymous'
+          : (donor_name || req.user?.full_name),
+
+        donor_phone: isAnonymousBool
+          ? null
+          : (donor_phone || req.user?.phone_number),
+
+        donor_email: isAnonymousBool
+          ? null
+          : (donor_email || req.user?.email),
+
         is_anonymous: isAnonymousBool,
-        is_verified: false,
+
         status: 'pending',
+
         community_id: finalCommunityId,
-        representative_id: representativeId,
-        donation_purpose: donation_purpose || 'donation'
       },
+
       include: {
         donation_campaigns: {
           select: {
             title: true,
-            community_id: true
-          }
-        }
-      }
+            community_id: true,
+          },
+        },
+      },
     });
 
     // Untuk volunteer registration - buat entry di volunteer_registrations
@@ -158,12 +168,12 @@ export const createDonation = async (req, res) => {
       await prisma.volunteer_registrations.create({
         data: {
           campaign_id: campaignId,
-          user_id: req.user.id,
+          user_id: req.user.user_id,
           availability: volunteer_availability,
           skills: volunteer_skill,
           notes: volunteer_notes,
-          status: 'pending'
-        }
+          status: 'pending',
+        },
       });
 
       // Update volunteer_registered count
@@ -300,7 +310,7 @@ export const getDonationsByCampaign = async (req, res) => {
       prisma.donations.findMany({
         where,
         include: {
-          users_donations_representative_idTousers: {
+          users_donations_donor_idTousers: {
             select: {
               user_id: true,
               full_name: true,
@@ -386,7 +396,7 @@ export const getDonationsByCommunity = async (req, res) => {
       prisma.donations.findMany({
         where,
         include: {
-          users_donations_representative_idTousers: {
+          users_donations_donor_idTousers: {
             select: {
               user_id: true,
               full_name: true,
@@ -484,7 +494,7 @@ export const getDonationById = async (req, res) => {
             logo: true
           }
         },
-        users_donations_representative_idTousers: {
+        users_donations_donor_idTousers: {
           select: {
             user_id: true,
             full_name: true,

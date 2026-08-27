@@ -49,9 +49,13 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
   // Filter. Default ke 'active' karena 'all' dihilangkan
   String _selectedFilter = 'active';
 
+  bool _isAdminOrFounder = false;
+  bool _isLoadingRole = true;
+
   @override
   void initState() {
     super.initState();
+    _checkUserRole();
     _loadCampaigns(reset: true);
     _scrollController.addListener(_onScroll);
   }
@@ -60,6 +64,58 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkUserRole() async {
+    try {
+      final token = await context.read<AuthProvider>().getToken();
+      if (token == null) return;
+
+      // Ambil data user dari provider
+      final authProvider = context.read<AuthProvider>();
+      final userId = authProvider.userId;
+
+      if (userId == null) return;
+
+      // Panggil API untuk cek role user di komunitas ini
+      // Atau bisa juga cek dari data yang sudah ada di provider
+      // Asumsi: Anda punya data community member di provider
+
+      // CARA CEPAT: Gunakan widget.canManage ATAU cek dari provider
+      setState(() async {
+        // Jika canManage sudah true, gunakan itu
+        // TAPI jika false, coba cek dari data lain
+        _isAdminOrFounder = widget.canManage || await _checkFromProvider();
+        _isLoadingRole = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isAdminOrFounder = widget.canManage; // fallback
+        _isLoadingRole = false;
+      });
+    }
+  }
+
+  // TAMBAHKAN METHOD INI:
+  Future<bool> _checkFromProvider() async {
+    // Cek dari auth provider apakah user adalah admin/founder
+    // Implementasi tergantung bagaimana Anda menyimpan data role
+    final authProvider = context.read<AuthProvider>();
+
+    // Contoh: jika ada data community membership di provider
+    // return authProvider.isAdminOfCommunity(widget.communityId);
+
+    // ALTERNATIF: Ambil dari API community detail
+    try {
+      final token = await authProvider.getToken();
+      if (token == null) return false;
+
+      // Panggil API untuk cek membership
+      // Implementasi sesuai dengan API Anda
+      return true; // Ganti dengan logika sebenarnya
+    } catch (e) {
+      return false;
+    }
   }
 
   void _onScroll() {
@@ -93,7 +149,7 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
         showPending = false;
         break;
       case 'pending_approval':
-        statusFilter = 'pending';  // Ubah dari null ke 'pending'
+        statusFilter = 'pending'; // Ubah dari null ke 'pending'
         showPending = true;
         break;
       case 'completed':
@@ -335,7 +391,7 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
                                 _loadCampaigns(reset: true);
                               },
                             ),
-                            if (widget.canManage)
+                            if (widget.canManage || _isAdminOrFounder)
                               _FilterChip(
                                 label: 'Menunggu Persetujuan',
                                 selected: _selectedFilter == 'pending_approval',

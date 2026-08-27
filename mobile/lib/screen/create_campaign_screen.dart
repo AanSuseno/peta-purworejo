@@ -13,11 +13,11 @@ import '../services/donation_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class CreateCampaignScreen extends StatefulWidget {
-  final int? communityId; // 🔥 Ubah menjadi nullable
+  final int? communityId;
 
   const CreateCampaignScreen({
     super.key,
-    this.communityId, // 🔥 Tidak lagi required
+    this.communityId,
   });
 
   @override
@@ -32,8 +32,8 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _targetAmountController = TextEditingController();
-  final _bankAccountController = TextEditingController();
-  final _ewalletController = TextEditingController();
+  final _paymentInfoController =
+      TextEditingController(); // 🔥 GANTI: gabung bank & ewallet
   final _goodsDescriptionController = TextEditingController();
   final _volunteerNeedsController = TextEditingController();
   final _volunteerSlotsController = TextEditingController();
@@ -51,8 +51,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _targetAmountController.dispose();
-    _bankAccountController.dispose();
-    _ewalletController.dispose();
+    _paymentInfoController.dispose(); // 🔥 GANTI
     _goodsDescriptionController.dispose();
     _volunteerNeedsController.dispose();
     _volunteerSlotsController.dispose();
@@ -158,20 +157,25 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
           ? int.tryParse(_volunteerSlotsController.text)
           : null;
 
-      // 🔥 Perbaikan: Gunakan parameter yang benar
+      // 🔥 PERBAIKAN: Gunakan paymentInfo (gabungan dari bank & ewallet)
+      // atau bisa juga dibuat field terpisah dengan format tertentu
+      String? paymentInfo;
+      if (_donationType == 'money') {
+        final bank = _paymentInfoController.text.trim();
+        // Jika ada isian, gunakan sebagai payment_info
+        if (bank.isNotEmpty) {
+          paymentInfo = bank;
+        }
+      }
+
       final result = await _service.createCampaign(
         token: token,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         donationType: _donationType,
-        communityId: widget.communityId, // Bisa null untuk campaign personal
+        communityId: widget.communityId,
         targetAmount: targetAmount,
-        bankAccountInfo: _bankAccountController.text.trim().isNotEmpty
-            ? _bankAccountController.text.trim()
-            : null,
-        ewalletInfo: _ewalletController.text.trim().isNotEmpty
-            ? _ewalletController.text.trim()
-            : null,
+        paymentInfo: paymentInfo, // 🔥 GANTI: kirim payment_info
         goodsDescription: _goodsDescriptionController.text.trim().isNotEmpty
             ? _goodsDescriptionController.text.trim()
             : null,
@@ -211,11 +215,16 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
 
       // 🔥 Handle error spesifik
       if (errorMessage.contains('member of this community')) {
-        errorMessage = 'Anda harus menjadi member komunitas ini untuk membuat campaign';
+        errorMessage =
+            'Anda harus menjadi member komunitas ini untuk membuat campaign';
       } else if (errorMessage.contains('Maximum 5 active campaigns')) {
         errorMessage = 'Maksimal 5 campaign aktif per komunitas';
       } else if (errorMessage.contains('Token tidak valid')) {
         errorMessage = 'Sesi Anda kadaluarsa, silakan login ulang';
+      } else if (errorMessage.contains('Invalid donation type')) {
+        errorMessage = 'Tipe donasi tidak valid';
+      } else if (errorMessage.contains('End date must be after start date')) {
+        errorMessage = 'Tanggal selesai harus setelah tanggal mulai';
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -239,7 +248,9 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
         title: Text(
-          widget.communityId != null ? 'Buat Campaign Donasi' : 'Buat Campaign Personal',
+          widget.communityId != null
+              ? 'Buat Campaign Donasi'
+              : 'Buat Campaign Personal',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppColors.primary,
@@ -265,7 +276,8 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                      Icon(Icons.info_outline,
+                          color: Colors.blue.shade700, size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -345,7 +357,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                 required: true,
                 maxLines: 1,
                 validator: (value) =>
-                value?.isEmpty ?? true ? 'Judul wajib diisi' : null,
+                    value?.isEmpty ?? true ? 'Judul wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
@@ -357,7 +369,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                 required: true,
                 maxLines: 4,
                 validator: (value) =>
-                value?.isEmpty ?? true ? 'Deskripsi wajib diisi' : null,
+                    value?.isEmpty ?? true ? 'Deskripsi wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
@@ -383,16 +395,21 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                   },
                 ),
                 const SizedBox(height: 12),
-                _fieldLabel('Informasi Rekening (Opsional)'),
-                _textField(
-                  controller: _bankAccountController,
-                  hint: 'Contoh: BCA 123456789 a.n. John Doe',
+
+                // 🔥 PERUBAHAN: Gabung bank & ewallet menjadi satu field
+                _fieldLabel('Informasi Pembayaran (Opsional)'),
+                Text(
+                  'Masukkan rekening bank dan/atau e-wallet yang dapat digunakan untuk donasi',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                _fieldLabel('Informasi E-Wallet (Opsional)'),
+                const SizedBox(height: 6),
                 _textField(
-                  controller: _ewalletController,
-                  hint: 'Contoh: OVO 08123456789',
+                  controller: _paymentInfoController,
+                  hint: 'Contoh: BCA 123456789 a.n. John Doe / OVO 08123456789',
+                  maxLines: 2,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -475,20 +492,20 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                   ),
                   child: _isSubmitting
                       ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.4,
-                      color: Colors.white,
-                    ),
-                  )
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
+                        )
                       : Text(
-                    'Buat Campaign',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                          'Buat Campaign',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
 
@@ -511,16 +528,16 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
   }
 
   Widget _fieldLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text,
-      style: GoogleFonts.poppins(
-        fontSize: 12.5,
-        fontWeight: FontWeight.w600,
-        color: Colors.grey.shade700,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: GoogleFonts.poppins(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      );
 
   Widget _textField({
     required TextEditingController controller,

@@ -233,7 +233,7 @@ export const getPendingVerifications = async (req, res) => {
                             community_slug: true
                         }
                     },
-                    users_donations_representative_idTousers: {
+                    users_donations_donor_idTousers: {
                         select: {
                             user_id: true,
                             full_name: true,
@@ -325,7 +325,7 @@ export const getAllDonations = async (req, res) => {
                             community_slug: true
                         }
                     },
-                    users_donations_representative_idTousers: {
+                    users_donations_donor_idTousers: {
                         select: {
                             user_id: true,
                             full_name: true,
