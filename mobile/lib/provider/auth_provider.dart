@@ -10,7 +10,8 @@ import '../services/secure_storage_service.dart';
 class AuthProvider extends ChangeNotifier {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
-    serverClientId: '1040742393190-iqja9lb7fcb1p09pfh0iop1n93etpcnm.apps.googleusercontent.com',
+    serverClientId:
+        '1040742393190-iqja9lb7fcb1p09pfh0iop1n93etpcnm.apps.googleusercontent.com',
   );
   final AuthService _authService = AuthService();
   final SecureStorageService _storage = SecureStorageService();

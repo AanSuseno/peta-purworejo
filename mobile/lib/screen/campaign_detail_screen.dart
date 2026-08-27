@@ -11,6 +11,7 @@ import 'package:shimmer/shimmer.dart';
 
 import '../provider/auth_provider.dart';
 import '../services/donation_service.dart';
+import 'edit_campaign_screen.dart';
 
 class CampaignDetailScreen extends StatefulWidget {
   final int campaignId;
@@ -86,6 +87,9 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   void initState() {
     super.initState();
     _loadDetail();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadUserData();
+    });
   }
 
   @override
@@ -95,6 +99,18 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     _donorEmailController.dispose();
     _amountController.dispose();
     super.dispose();
+  }
+
+  void _loadUserData() {
+    final authProvider = context.read<AuthProvider>();
+
+    // 🔥 Gunakan getter yang sudah tersedia di AuthProvider
+    setState(() {
+      _donorNameController.text = authProvider.displayName; // Sudah tersedia
+      _donorEmailController.text = authProvider.email; // Sudah tersedia
+      _donorPhoneController.text =
+          authProvider.userData?['phone_number'] as String? ?? '';
+    });
   }
 
   Future<void> _loadDetail() async {
@@ -135,9 +151,9 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _campaign = campaign;
         _summary = summary;
         _donations = (donations['data'] as List?)
-                ?.whereType<Map>()
-                .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-                .toList() ??
+            ?.whereType<Map>()
+            .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+            .toList() ??
             [];
         _isLoading = false;
       });
@@ -211,31 +227,49 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
   }
 
-  Future<void> _pickImage(ImageSource source, bool isGoods) async {
+  /// 🔥 FIX: `_pickImage` sekarang menerima `setModalState` opsional.
+  /// `setState` biasa hanya menandai state milik `_CampaignDetailScreenState`
+  /// sebagai dirty — tapi bottom sheet dari `showModalBottomSheet` dirender
+  /// di route/overlay terpisah, jadi elemen di dalamnya TIDAK otomatis
+  /// rebuild hanya karena `setState` di screen utama dipanggil.
+  /// Dengan memanggil `setModalState` (dari `StatefulBuilder` yang
+  /// membungkus isi sheet), preview gambar langsung muncul di sheet.
+  Future<void> _pickImage(
+      ImageSource source,
+      bool isGoods, {
+        StateSetter? setModalState,
+      }) async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: source, imageQuality: 85);
     if (picked != null) {
+      final file = File(picked.path);
+
+      // Update state utama (dipakai saat submit / dipertahankan
+      // walau sheet ditutup-buka lagi).
       setState(() {
         if (isGoods) {
-          _goodsPhoto = File(picked.path);
+          _goodsPhoto = file;
         } else {
-          _proofImage = File(picked.path);
+          _proofImage = file;
         }
       });
+
+      // 🔥 Trigger rebuild khusus untuk konten bottom sheet.
+      setModalState?.call(() {});
     }
   }
 
-  Future<void> _submitDonation() async {
+  Future<void> _submitDonation({StateSetter? setModalState}) async {
     if (_donationType == 'money') {
-      await _submitMoneyDonation();
+      await _submitMoneyDonation(setModalState: setModalState);
     } else if (_donationType == 'goods') {
-      await _submitGoodsDonation();
+      await _submitGoodsDonation(setModalState: setModalState);
     } else {
-      await _submitVolunteerRegistration();
+      await _submitVolunteerRegistration(setModalState: setModalState);
     }
   }
 
-  Future<void> _submitMoneyDonation() async {
+  Future<void> _submitMoneyDonation({StateSetter? setModalState}) async {
     // Validasi
     if (_donorNameController.text.trim().isEmpty) {
       _showError('Nama donatur wajib diisi');
@@ -260,6 +294,13 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       return;
     }
 
+    // 🔥 Validasi ukuran file (maks 5MB)
+    final fileSize = await _proofImage!.length();
+    if (fileSize > 5 * 1024 * 1024) {
+      _showError('Ukuran file bukti transfer maksimal 5MB');
+      return;
+    }
+
     final token = await context.read<AuthProvider>().getToken();
     if (token == null) {
       _showError('Sesi tidak ditemukan, silakan login ulang');
@@ -267,6 +308,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
 
     setState(() => _isSubmitting = true);
+    setModalState?.call(() {});
 
     try {
       await _service.donateMoney(
@@ -278,7 +320,8 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         donorPhone: _donorPhoneController.text.trim(),
         donorEmail: _donorEmailController.text.trim(),
         communityId: widget.communityId,
-        proofImage: _proofImage,
+        proofImage:
+        _proofImage, // 🔥 Ini akan dikirim dengan field 'proof_image'
       );
 
       if (!mounted) return;
@@ -287,15 +330,17 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
           content: Text('Donasi berhasil dibuat, menunggu verifikasi'),
         ),
       );
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(); // tutup bottom sheet
+      Navigator.of(context).pop(true); // kembali dari detail screen
     } catch (e) {
       _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+      setModalState?.call(() {});
     }
   }
 
-  Future<void> _submitGoodsDonation() async {
+  Future<void> _submitGoodsDonation({StateSetter? setModalState}) async {
     // Validasi
     if (_donorNameController.text.trim().isEmpty) {
       _showError('Nama donatur wajib diisi');
@@ -319,6 +364,15 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       return;
     }
 
+    // 🔥 Validasi ukuran file (opsional, maks 5MB)
+    if (_goodsPhoto != null) {
+      final fileSize = await _goodsPhoto!.length();
+      if (fileSize > 5 * 1024 * 1024) {
+        _showError('Ukuran file foto barang maksimal 5MB');
+        return;
+      }
+    }
+
     final token = await context.read<AuthProvider>().getToken();
     if (token == null) {
       _showError('Sesi tidak ditemukan, silakan login ulang');
@@ -326,6 +380,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
 
     setState(() => _isSubmitting = true);
+    setModalState?.call(() {});
 
     try {
       await _service.donateGoods(
@@ -350,15 +405,19 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
           content: Text('Donasi barang berhasil dibuat, menunggu verifikasi'),
         ),
       );
+      Navigator.of(context).pop();
       Navigator.of(context).pop(true);
     } catch (e) {
       _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+      setModalState?.call(() {});
     }
   }
 
-  Future<void> _submitVolunteerRegistration() async {
+  Future<void> _submitVolunteerRegistration({
+    StateSetter? setModalState,
+  }) async {
     final token = await context.read<AuthProvider>().getToken();
     if (token == null) {
       _showError('Sesi tidak ditemukan, silakan login ulang');
@@ -366,6 +425,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
 
     setState(() => _isSubmitting = true);
+    setModalState?.call(() {});
 
     try {
       await _service.registerVolunteer(
@@ -381,14 +441,16 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content:
-              Text('Berhasil mendaftar sebagai volunteer, menunggu konfirmasi'),
+          Text('Berhasil mendaftar sebagai volunteer, menunggu konfirmasi'),
         ),
       );
+      Navigator.of(context).pop();
       Navigator.of(context).pop(true);
     } catch (e) {
       _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+      setModalState?.call(() {});
     }
   }
 
@@ -578,7 +640,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
             Text(
               'Alasan: $rejectionReason',
               style:
-                  GoogleFonts.poppins(fontSize: 12, color: Colors.red.shade600),
+              GoogleFonts.poppins(fontSize: 12, color: Colors.red.shade600),
             ),
           ],
           const SizedBox(height: 12),
@@ -629,7 +691,9 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   }
 
   void _showDonationDialog() {
-    _donationType = _campaign?['donation_type'] ?? 'money';
+    // 🔥 AMBIL DONATION TYPE DARI CAMPAIGN
+    _donationType = _campaign?['donation_type'] as String? ?? 'money';
+
     _donorNameController.clear();
     _donorPhoneController.clear();
     _donorEmailController.clear();
@@ -644,76 +708,91 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     _volunteerExperience = '';
     _volunteerNotes = '';
 
+    // 🔥 Isi ulang dengan data user
+    final authProvider = context.read<AuthProvider>();
+    _donorNameController.text = authProvider.displayName;
+    _donorEmailController.text = authProvider.email;
+    _donorPhoneController.text =
+        authProvider.userData?['phone_number'] as String? ?? '';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        builder: (_, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+      builder: (context) => StatefulBuilder(
+        // 🔥 FIX UTAMA: StatefulBuilder memberi kita `setModalState` yang
+        // scope-nya adalah konten bottom sheet ini. Panggil `setModalState`
+        // (bukan hanya `setState` milik screen) setiap kali ada perubahan
+        // yang harus langsung terlihat di sheet — misalnya preview gambar
+        // setelah dipilih dari galeri/kamera, atau status loading tombol
+        // submit.
+        builder: (context, setModalState) => DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (_, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _donationType == 'money'
-                    ? 'Donasi Uang'
-                    : _donationType == 'goods'
-                        ? 'Donasi Barang'
-                        : 'Daftar Relawan',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 16),
+                Text(
+                  _donationType == 'money'
+                      ? 'Donasi Uang'
+                      : _donationType == 'goods'
+                      ? 'Donasi Barang'
+                      : 'Daftar Relawan',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _campaign?['title'] ?? '',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: Colors.grey.shade600,
+                const SizedBox(height: 8),
+                Text(
+                  _campaign?['title'] ?? '',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const Divider(height: 24),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  child: _buildDonationForm(),
+                const Divider(height: 24),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: _buildDonationForm(setModalState),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDonationForm() {
+  Widget _buildDonationForm(StateSetter setModalState) {
     if (_donationType == 'money') {
-      return _buildMoneyDonationForm();
+      return _buildMoneyDonationForm(setModalState);
     } else if (_donationType == 'goods') {
-      return _buildGoodsDonationForm();
+      return _buildGoodsDonationForm(setModalState);
     } else {
-      return _buildVolunteerForm();
+      return _buildVolunteerForm(setModalState);
     }
   }
 
-  Widget _buildMoneyDonationForm() {
+  Widget _buildMoneyDonationForm(StateSetter setModalState) {
     return Column(
       children: [
         _formField('Nama Donatur *', _donorNameController),
@@ -730,16 +809,18 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _buildImagePicker(
           label: 'Upload Bukti Transfer *',
           imageFile: _proofImage,
-          onPick: () => _pickImage(ImageSource.gallery, false),
-          onCamera: () => _pickImage(ImageSource.camera, false),
+          onPick: () =>
+              _pickImage(ImageSource.gallery, false, setModalState: setModalState),
+          onCamera: () =>
+              _pickImage(ImageSource.camera, false, setModalState: setModalState),
         ),
         const SizedBox(height: 20),
-        _buildSubmitButton('Kirim Donasi'),
+        _buildSubmitButton('Kirim Donasi', setModalState),
       ],
     );
   }
 
-  Widget _buildGoodsDonationForm() {
+  Widget _buildGoodsDonationForm(StateSetter setModalState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -768,7 +849,10 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                 DropdownMenuItem(value: 'medicine', child: Text('Obat-obatan')),
                 DropdownMenuItem(value: 'other', child: Text('Lainnya')),
               ],
-              onChanged: (v) => setState(() => _goodsType = v!),
+              onChanged: (v) {
+                setState(() => _goodsType = v!);
+                setModalState(() {});
+              },
             ),
           ),
         ),
@@ -776,7 +860,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _fieldLabel('Nama Barang *'),
         TextFormField(
           initialValue: _goodsName,
-          onChanged: (v) => setState(() => _goodsName = v),
+          onChanged: (v) => _goodsName = v,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration: _inputDecoration('Masukkan nama barang'),
         ),
@@ -791,10 +875,10 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   _fieldLabel('Jumlah *'),
                   TextFormField(
                     initialValue:
-                        _goodsQuantity > 0 ? _goodsQuantity.toString() : '',
-                    onChanged: (v) => setState(() {
+                    _goodsQuantity > 0 ? _goodsQuantity.toString() : '',
+                    onChanged: (v) {
                       _goodsQuantity = double.tryParse(v) ?? 0;
-                    }),
+                    },
                     style: GoogleFonts.poppins(fontSize: 13.5),
                     keyboardType: TextInputType.number,
                     decoration: _inputDecoration('Jumlah'),
@@ -825,7 +909,10 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                               value: 'liter', child: Text('liter')),
                           DropdownMenuItem(value: 'unit', child: Text('unit')),
                         ],
-                        onChanged: (v) => setState(() => _goodsUnit = v!),
+                        onChanged: (v) {
+                          setState(() => _goodsUnit = v!);
+                          setModalState(() {});
+                        },
                       ),
                     ),
                   ),
@@ -852,7 +939,10 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                     value: 'dropoff', child: Text('Antar ke Lokasi')),
                 DropdownMenuItem(value: 'courier', child: Text('Kurir')),
               ],
-              onChanged: (v) => setState(() => _deliveryMethod = v!),
+              onChanged: (v) {
+                setState(() => _deliveryMethod = v!);
+                setModalState(() {});
+              },
             ),
           ),
         ),
@@ -860,7 +950,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _fieldLabel('Alamat Pengiriman'),
         TextFormField(
           initialValue: _deliveryAddress,
-          onChanged: (v) => setState(() => _deliveryAddress = v),
+          onChanged: (v) => _deliveryAddress = v,
           maxLines: 2,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration: _inputDecoration('Masukkan alamat pengiriman'),
@@ -869,23 +959,25 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _buildImagePicker(
           label: 'Upload Foto Barang (Opsional)',
           imageFile: _goodsPhoto,
-          onPick: () => _pickImage(ImageSource.gallery, true),
-          onCamera: () => _pickImage(ImageSource.camera, true),
+          onPick: () =>
+              _pickImage(ImageSource.gallery, true, setModalState: setModalState),
+          onCamera: () =>
+              _pickImage(ImageSource.camera, true, setModalState: setModalState),
         ),
         const SizedBox(height: 20),
-        _buildSubmitButton('Kirim Donasi Barang'),
+        _buildSubmitButton('Kirim Donasi Barang', setModalState),
       ],
     );
   }
 
-  Widget _buildVolunteerForm() {
+  Widget _buildVolunteerForm(StateSetter setModalState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _fieldLabel('Ketersediaan Waktu'),
         TextFormField(
           initialValue: _volunteerAvailability,
-          onChanged: (v) => setState(() => _volunteerAvailability = v),
+          onChanged: (v) => _volunteerAvailability = v,
           maxLines: 2,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration: _inputDecoration('Kapan Anda tersedia?'),
@@ -894,7 +986,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _fieldLabel('Keahlian'),
         TextFormField(
           initialValue: _volunteerSkills,
-          onChanged: (v) => setState(() => _volunteerSkills = v),
+          onChanged: (v) => _volunteerSkills = v,
           maxLines: 2,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration: _inputDecoration('Keahlian yang dimiliki'),
@@ -903,7 +995,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _fieldLabel('Pengalaman'),
         TextFormField(
           initialValue: _volunteerExperience,
-          onChanged: (v) => setState(() => _volunteerExperience = v),
+          onChanged: (v) => _volunteerExperience = v,
           maxLines: 3,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration: _inputDecoration('Pengalaman sebagai relawan'),
@@ -912,13 +1004,13 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         _fieldLabel('Catatan Tambahan'),
         TextFormField(
           initialValue: _volunteerNotes,
-          onChanged: (v) => setState(() => _volunteerNotes = v),
+          onChanged: (v) => _volunteerNotes = v,
           maxLines: 2,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration: _inputDecoration('Catatan tambahan'),
         ),
         const SizedBox(height: 20),
-        _buildSubmitButton('Daftar Relawan'),
+        _buildSubmitButton('Daftar Relawan', setModalState),
       ],
     );
   }
@@ -934,23 +1026,23 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
           keyboardType: keyboardType,
           style: GoogleFonts.poppins(fontSize: 13.5),
           decoration:
-              _inputDecoration('Masukkan $label', prefixText: prefixText),
+          _inputDecoration('Masukkan $label', prefixText: prefixText),
         ),
       ],
     );
   }
 
   Widget _fieldLabel(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
-          text,
-          style: GoogleFonts.poppins(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey.shade700,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text(
+      text,
+      style: GoogleFonts.poppins(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: Colors.grey.shade700,
+      ),
+    ),
+  );
 
   InputDecoration _inputDecoration(String hint, {String? prefixText}) {
     return InputDecoration(
@@ -984,7 +1076,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         GestureDetector(
           onTap: onPick,
           child: Container(
-            height: 80,
+            height: 200, // 🔥 TINGGIKAN AGAR GAMBAR TERLIHAT LEBIH BESAR
             width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
@@ -993,66 +1085,97 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
             ),
             child: imageFile != null
                 ? ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      imageFile,
-                      fit: BoxFit.cover,
-                    ),
-                  )
+              borderRadius: BorderRadius.circular(12),
+              child: Image.file(
+                imageFile,
+                fit: BoxFit.contain, // 🔥 UBAH DARI 'cover' KE 'contain'
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            )
                 : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.add_photo_alternate_outlined,
-                          size: 28, color: Colors.grey.shade400),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Tap untuk pilih gambar',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          TextButton.icon(
-                            onPressed: onPick,
-                            icon: const Icon(Icons.photo_library, size: 16),
-                            label: const Text('Galeri'),
-                            style: TextButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: onCamera,
-                            icon: const Icon(Icons.camera_alt, size: 16),
-                            label: const Text('Kamera'),
-                            style: TextButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_photo_alternate_outlined,
+                    size: 28, color: Colors.grey.shade400),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap untuk pilih gambar',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
                   ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton.icon(
+                      onPressed: onPick,
+                      icon: const Icon(Icons.photo_library, size: 16),
+                      label: const Text('Galeri'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: onCamera,
+                      icon: const Icon(Icons.camera_alt, size: 16),
+                      label: const Text('Kamera'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
+        // 🔥 Tombol ganti gambar saat sudah ada preview, supaya user tidak
+        // perlu menghapus dulu untuk memilih ulang.
+        if (imageFile != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: onPick,
+                icon: const Icon(Icons.photo_library, size: 16),
+                label: const Text('Ganti dari Galeri'),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: onCamera,
+                icon: const Icon(Icons.camera_alt, size: 16),
+                label: const Text('Ambil Ulang'),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
 
-  Widget _buildSubmitButton(String label) {
+  Widget _buildSubmitButton(String label, StateSetter setModalState) {
     return SizedBox(
       width: double.infinity,
       height: 48,
       child: ElevatedButton(
-        onPressed: _isSubmitting ? null : _submitDonation,
+        onPressed:
+        _isSubmitting ? null : () => _submitDonation(setModalState: setModalState),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
@@ -1063,24 +1186,26 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         ),
         child: _isSubmitting
             ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-              )
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+              strokeWidth: 2, color: Colors.white),
+        )
             : Text(
-                label,
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final canManage = _canManageCampaign();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
@@ -1092,60 +1217,189 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          if (canManage && !_isLoading)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _editCampaign();
+                } else if (value == 'delete') {
+                  _deleteCampaign();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem<String>(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('Edit Campaign'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Hapus', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
       ),
       bottomSheet: _campaign?['status'] == 'active' && !_isLoading
           ? SafeArea(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: _showDonationDialog,
-                    icon: Icon(
-                      _campaign?['donation_type'] == 'money'
-                          ? Icons.attach_money
-                          : _campaign?['donation_type'] == 'goods'
-                              ? Icons.inventory_2_outlined
-                              : Icons.handshake_outlined,
-                      size: 18,
-                    ),
-                    label: Text(
-                      _campaign?['donation_type'] == 'money'
-                          ? 'Donasi Sekarang'
-                          : _campaign?['donation_type'] == 'goods'
-                              ? 'Donasi Barang'
-                              : 'Daftar Relawan',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: _showDonationDialog,
+              icon: Icon(
+                _campaign?['donation_type'] == 'money'
+                    ? Icons.attach_money
+                    : _campaign?['donation_type'] == 'goods'
+                    ? Icons.inventory_2_outlined
+                    : Icons.handshake_outlined,
+                size: 18,
+              ),
+              label: Text(
+                _campaign?['donation_type'] == 'money'
+                    ? 'Donasi Sekarang'
+                    : _campaign?['donation_type'] == 'goods'
+                    ? 'Donasi Barang'
+                    : 'Daftar Relawan',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            )
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ),
+      )
           : null,
       body: _isLoading ? _buildShimmerLoading() : _buildBody(),
     );
+  }
+
+  bool _canManageCampaign() {
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.userId;
+
+    // 🔥 GUNAKAN DATA PERMISSION DARI BACKEND
+    final permissions = _campaign?['user_permissions'] as Map<String, dynamic>?;
+
+    if (permissions != null) {
+      return permissions['can_manage'] == true;
+    }
+
+    // FALLBACK: Cek manual jika data permission tidak ada
+    final creatorId = _campaign?['creator_id'] as int?;
+    if (currentUserId != null && creatorId == currentUserId) {
+      return true;
+    }
+
+    return false;
+  }
+
+  Future<void> _deleteCampaign() async {
+    if (_campaign == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Hapus Campaign',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Apakah Anda yakin ingin menghapus campaign "${_campaign!['title']}"?',
+          style: GoogleFonts.poppins(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      _showError('Sesi tidak ditemukan, silakan login ulang');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _service.deleteCampaign(
+        token: token,
+        campaignId: widget.campaignId,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Campaign berhasil dihapus')),
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _editCampaign() async {
+    if (_campaign == null) return;
+
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditCampaignScreen(
+          campaignId: widget.campaignId,
+          communityId: widget.communityId,
+          initialData: _campaign!,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      await _loadDetail();
+    }
   }
 
   // ============ SHIMMER LOADING ============
@@ -1156,7 +1410,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       enabled: true,
       child: SingleChildScrollView(
         padding:
-            EdgeInsets.only(bottom: 80 + MediaQuery.of(context).padding.bottom),
+        EdgeInsets.only(bottom: 80 + MediaQuery.of(context).padding.bottom),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1323,41 +1577,41 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   // Info rows (4 items)
                   ...List.generate(
                       4,
-                      (index) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                Container(
-                                  height: 18,
-                                  width: 18,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.grey,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        height: 12,
-                                        width: 60,
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Container(
-                                        height: 14,
-                                        width: 120,
-                                        color: Colors.grey.shade300,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                          (index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              height: 18,
+                              width: 18,
+                              decoration: const BoxDecoration(
+                                color: Colors.grey,
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                          )),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    height: 12,
+                                    width: 60,
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    height: 14,
+                                    width: 120,
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
                 ],
               ),
             ),
@@ -1383,55 +1637,55 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   // Donation items (5 items)
                   ...List.generate(
                       4,
-                      (index) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Row(
-                              children: [
-                                Container(
-                                  height: 28,
-                                  width: 28,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.grey,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        height: 14,
-                                        width: 80 + (index % 2 == 0 ? 40 : 0),
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Container(
-                                        height: 10,
-                                        width: 100,
-                                        color: Colors.grey.shade300,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  height: 14,
-                                  width: 70,
-                                  color: Colors.grey.shade300,
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  height: 18,
-                                  width: 24,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade300,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              ],
+                          (index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              height: 28,
+                              width: 28,
+                              decoration: const BoxDecoration(
+                                color: Colors.grey,
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                          )),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    height: 14,
+                                    width: 80 + (index % 2 == 0 ? 40 : 0),
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    height: 10,
+                                    width: 100,
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              height: 14,
+                              width: 70,
+                              color: Colors.grey.shade300,
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              height: 18,
+                              width: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
                 ],
               ),
             ),
@@ -1459,7 +1713,6 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
 
     final campaign = _campaign!;
-    final summary = _summary!;
     final donationType = campaign['donation_type'] as String? ?? 'money';
     final status = campaign['status'] as String?;
     final targetAmount = _parseDouble(campaign['target_amount']);
@@ -1729,66 +1982,6 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
               const SizedBox(height: 12),
             ],
 
-            // Detail info
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Informasi Tambahan',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (campaign['bank_account_info'] != null &&
-                      (campaign['bank_account_info'] as String).isNotEmpty)
-                    _InfoRow(
-                      icon: Icons.account_balance_outlined,
-                      label: 'Rekening',
-                      value: campaign['bank_account_info'],
-                    ),
-                  if (campaign['ewallet_info'] != null &&
-                      (campaign['ewallet_info'] as String).isNotEmpty)
-                    _InfoRow(
-                      icon: Icons.wallet_outlined,
-                      label: 'E-Wallet',
-                      value: campaign['ewallet_info'],
-                    ),
-                  if (campaign['start_date'] != null)
-                    _InfoRow(
-                      icon: Icons.event_available_outlined,
-                      label: 'Mulai',
-                      value: DateFormat('dd/MM/yyyy')
-                          .format(DateTime.parse(campaign['start_date'])),
-                    ),
-                  if (campaign['end_date'] != null)
-                    _InfoRow(
-                      icon: Icons.event_busy_outlined,
-                      label: 'Selesai',
-                      value: DateFormat('dd/MM/yyyy')
-                          .format(DateTime.parse(campaign['end_date'])),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
             // Recent donations
             if (_donations.isNotEmpty) ...[
               Container(
@@ -1823,7 +2016,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                           ? 'Anonim'
                           : (donation['donor_name'] as String? ?? 'Unknown');
                       final amount = _parseDouble(donation['amount']);
-                      final status = donation['status'] as String?;
+                      final donationStatus = donation['status'] as String?;
                       final createdAt = donation['created_at'] as String?;
 
                       return Padding(
@@ -1833,7 +2026,7 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                             CircleAvatar(
                               radius: 14,
                               backgroundColor:
-                                  AppColors.primary.withOpacity(0.1),
+                              AppColors.primary.withOpacity(0.1),
                               child: Text(
                                 donorName.isNotEmpty ? donorName[0] : '?',
                                 style: GoogleFonts.poppins(
@@ -1884,24 +2077,24 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: status == 'confirmed'
+                                color: donationStatus == 'confirmed'
                                     ? Colors.green.withOpacity(0.15)
                                     : Colors.orange.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                status == 'confirmed'
+                                donationStatus == 'confirmed'
                                     ? '✓'
-                                    : status == 'pending'
-                                        ? '⏳'
-                                        : '✗',
+                                    : donationStatus == 'pending'
+                                    ? '⏳'
+                                    : '✗',
                                 style: GoogleFonts.poppins(
                                   fontSize: 10,
-                                  color: status == 'confirmed'
+                                  color: donationStatus == 'confirmed'
                                       ? Colors.green
-                                      : status == 'pending'
-                                          ? Colors.orange
-                                          : Colors.red,
+                                      : donationStatus == 'pending'
+                                      ? Colors.orange
+                                      : Colors.red,
                                 ),
                               ),
                             ),

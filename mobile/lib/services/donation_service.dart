@@ -294,13 +294,12 @@ class DonationService {
     }
   }
 
-  /// POST /donations/campaigns - Buat campaign baru
   Future<Map<String, dynamic>> createCampaign({
     required String token,
     required String title,
     required String description,
     required String donationType, // 'money', 'goods', 'volunteer'
-    required int communityId,
+    int? communityId, // 🔥 Ubah menjadi nullable (opsional)
     double? targetAmount,
     String? bankAccountInfo,
     String? ewalletInfo,
@@ -319,8 +318,12 @@ class DonationService {
       'title': title.trim(),
       'description': description.trim(),
       'donation_type': donationType,
-      'community_id': communityId,
     };
+
+    // 🔥 Hanya tambahkan community_id jika ada (tidak null)
+    if (communityId != null) {
+      body['community_id'] = communityId;
+    }
 
     if (targetAmount != null && targetAmount > 0) {
       body['target_amount'] = targetAmount;
@@ -375,7 +378,9 @@ class DonationService {
       }
 
       if (response.statusCode == 400) {
-        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
+        // 🔥 Tampilkan pesan error lebih detail
+        final message = data['message'] ?? 'Data yang dikirim tidak valid';
+        throw Exception(message);
       }
 
       throw Exception(data['message'] ?? 'Gagal membuat campaign');
@@ -386,12 +391,11 @@ class DonationService {
 
   // ==================== DONATION ENDPOINTS ====================
 
-  /// POST /donations/campaigns/:id/donate - Donasi uang
   Future<Map<String, dynamic>> donateMoney({
     required String token,
     required int campaignId,
     required double amount,
-    required String paymentMethod, // 'bank_transfer', 'ewallet', 'cash'
+    required String paymentMethod,
     required String donorName,
     required String donorPhone,
     required String donorEmail,
@@ -427,11 +431,12 @@ class DonationService {
         request.fields['representative_id'] = representativeId.toString();
       }
 
+      // 🔥 PERBAIKAN: Field name harus 'proof_image' sesuai backend
       if (proofImage != null) {
         final fileName = 'proof_${DateTime.now().millisecondsSinceEpoch}.jpg';
         request.files.add(
           await http.MultipartFile.fromPath(
-            'proof',
+            'proof_image', // 🔥 Ubah dari 'proof' menjadi 'proof_image'
             proofImage.path,
             filename: fileName,
             contentType: MediaType('image', 'jpeg'),
@@ -447,7 +452,7 @@ class DonationService {
 
       final data = _parseResponse(tag, response);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
         _debugLog(tag, '✅ Donation created successfully');
         return data['data'] as Map<String, dynamic>;
       }
@@ -470,11 +475,11 @@ class DonationService {
   Future<Map<String, dynamic>> donateGoods({
     required String token,
     required int campaignId,
-    required String goodsType, // 'food', 'clothing', 'medicine', 'other'
+    required String goodsType,
     required String goodsName,
     required double goodsQuantity,
-    required String goodsUnit, // 'kg', 'pcs', 'liter', 'unit'
-    required String deliveryMethod, // 'pickup', 'dropoff', 'courier'
+    required String goodsUnit,
+    required String deliveryMethod,
     required String donorName,
     required String donorPhone,
     required String donorEmail,
@@ -518,11 +523,12 @@ class DonationService {
         request.fields['representative_id'] = representativeId.toString();
       }
 
+      // 🔥 PERBAIKAN: Field name harus 'goods_photo' sesuai backend
       if (goodsPhoto != null) {
         final fileName = 'goods_${DateTime.now().millisecondsSinceEpoch}.jpg';
         request.files.add(
           await http.MultipartFile.fromPath(
-            'goods_photo',
+            'goods_photo', // 🔥 Sudah benar
             goodsPhoto.path,
             filename: fileName,
             contentType: MediaType('image', 'jpeg'),
@@ -536,7 +542,7 @@ class DonationService {
 
       final data = _parseResponse(tag, response);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
         _debugLog(tag, '✅ Goods donation created successfully');
         return data['data'] as Map<String, dynamic>;
       }

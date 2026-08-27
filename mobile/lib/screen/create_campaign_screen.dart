@@ -13,11 +13,11 @@ import '../services/donation_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class CreateCampaignScreen extends StatefulWidget {
-  final int communityId;
+  final int? communityId; // 🔥 Ubah menjadi nullable
 
   const CreateCampaignScreen({
     super.key,
-    required this.communityId,
+    this.communityId, // 🔥 Tidak lagi required
   });
 
   @override
@@ -76,6 +76,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Pilih tanggal mulai terlebih dahulu'),
+          backgroundColor: Colors.orange,
         ),
       );
       return;
@@ -94,15 +95,44 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Validasi spesifik tipe donasi
-    if (_donationType == 'money' && _targetAmountController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Target donasi wajib diisi untuk donasi uang'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
+    // 🔥 Validasi spesifik tipe donasi
+    if (_donationType == 'money') {
+      // Validasi target amount untuk donasi uang
+      if (_targetAmountController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Target donasi wajib diisi untuk donasi uang'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      final targetAmount = double.tryParse(_targetAmountController.text);
+      if (targetAmount == null || targetAmount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Target donasi harus berupa angka positif'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // 🔥 Validasi untuk volunteer slots
+    if (_donationType == 'volunteer') {
+      if (_volunteerSlotsController.text.isNotEmpty) {
+        final slots = int.tryParse(_volunteerSlotsController.text);
+        if (slots == null || slots <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Kuota relawan harus berupa angka positif'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
     }
 
     final token = await context.read<AuthProvider>().getToken();
@@ -110,7 +140,9 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Sesi tidak ditemukan, silakan login ulang')),
+          content: Text('Sesi tidak ditemukan, silakan login ulang'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -126,17 +158,26 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
           ? int.tryParse(_volunteerSlotsController.text)
           : null;
 
+      // 🔥 Perbaikan: Gunakan parameter yang benar
       final result = await _service.createCampaign(
         token: token,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         donationType: _donationType,
-        communityId: widget.communityId,
+        communityId: widget.communityId, // Bisa null untuk campaign personal
         targetAmount: targetAmount,
-        bankAccountInfo: _bankAccountController.text.trim(),
-        ewalletInfo: _ewalletController.text.trim(),
-        goodsDescription: _goodsDescriptionController.text.trim(),
-        volunteerNeeds: _volunteerNeedsController.text.trim(),
+        bankAccountInfo: _bankAccountController.text.trim().isNotEmpty
+            ? _bankAccountController.text.trim()
+            : null,
+        ewalletInfo: _ewalletController.text.trim().isNotEmpty
+            ? _ewalletController.text.trim()
+            : null,
+        goodsDescription: _goodsDescriptionController.text.trim().isNotEmpty
+            ? _goodsDescriptionController.text.trim()
+            : null,
+        volunteerNeeds: _volunteerNeedsController.text.trim().isNotEmpty
+            ? _volunteerNeedsController.text.trim()
+            : null,
         volunteerSlots: volunteerSlots,
         startDate: _startDate != null
             ? DateFormat('yyyy-MM-dd').format(_startDate!)
@@ -147,23 +188,44 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
       );
 
       if (!mounted) return;
+
+      // 🔥 Tampilkan pesan sukses
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            result['message'] ?? 'Campaign donasi berhasil dibuat',
+            'Campaign berhasil dibuat! Menunggu persetujuan admin.',
+            style: GoogleFonts.poppins(),
           ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
         ),
       );
-      // Kirim balik data campaign yang baru dibuat (bukan cuma `true`),
-      // supaya layar sebelumnya bisa langsung menampilkannya tanpa harus
-      // menunggu approval admin/founder membuatnya muncul lagi dari server.
+
+      // Kirim balik data campaign yang baru dibuat
       Navigator.of(context).pop(result);
     } catch (e) {
       if (!mounted) return;
+
+      // 🔥 Tampilkan pesan error yang lebih jelas
+      String errorMessage = e.toString().replaceFirst('Exception: ', '');
+
+      // 🔥 Handle error spesifik
+      if (errorMessage.contains('member of this community')) {
+        errorMessage = 'Anda harus menjadi member komunitas ini untuk membuat campaign';
+      } else if (errorMessage.contains('Maximum 5 active campaigns')) {
+        errorMessage = 'Maksimal 5 campaign aktif per komunitas';
+      } else if (errorMessage.contains('Token tidak valid')) {
+        errorMessage = 'Sesi Anda kadaluarsa, silakan login ulang';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(
+            errorMessage,
+            style: GoogleFonts.poppins(),
+          ),
           backgroundColor: Colors.red.shade600,
+          duration: const Duration(seconds: 4),
         ),
       );
     } finally {
@@ -177,7 +239,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
         title: Text(
-          'Buat Campaign Donasi',
+          widget.communityId != null ? 'Buat Campaign Donasi' : 'Buat Campaign Personal',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppColors.primary,
@@ -191,6 +253,33 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 🔥 Informasi komunitas (jika ada)
+              if (widget.communityId != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Campaign ini akan dibuat di dalam komunitas dan membutuhkan persetujuan admin.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               // Tipe Donasi
               _fieldLabel('Tipe Donasi *'),
               Container(
@@ -251,12 +340,12 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
               // Judul
               CustomTextField(
                 controller: _titleController,
-                hint: 'Masukkan judul',
+                hint: 'Masukkan judul campaign',
                 label: 'Judul Campaign',
                 required: true,
                 maxLines: 1,
                 validator: (value) =>
-                    value?.isEmpty ?? true ? 'Wajib diisi' : null,
+                value?.isEmpty ?? true ? 'Judul wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
@@ -268,7 +357,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                 required: true,
                 maxLines: 4,
                 validator: (value) =>
-                    value?.isEmpty ?? true ? 'Deskripsi wajib diisi' : null,
+                value?.isEmpty ?? true ? 'Deskripsi wajib diisi' : null,
               ),
               const SizedBox(height: 16),
 
@@ -282,18 +371,28 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                   maxLines: 1,
                   keyboardType: TextInputType.number,
                   prefixText: 'Rp ',
+                  validator: (value) {
+                    if (value?.isEmpty ?? true) {
+                      return 'Target donasi wajib diisi';
+                    }
+                    final amount = double.tryParse(value!);
+                    if (amount == null || amount <= 0) {
+                      return 'Masukkan angka yang valid';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
                 _fieldLabel('Informasi Rekening (Opsional)'),
                 _textField(
                   controller: _bankAccountController,
-                  hint: 'Masukkan info rekening bank',
+                  hint: 'Contoh: BCA 123456789 a.n. John Doe',
                 ),
                 const SizedBox(height: 8),
                 _fieldLabel('Informasi E-Wallet (Opsional)'),
                 _textField(
                   controller: _ewalletController,
-                  hint: 'Masukkan info e-wallet',
+                  hint: 'Contoh: OVO 08123456789',
                 ),
                 const SizedBox(height: 12),
               ],
@@ -324,7 +423,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                       : null,
                 ),
                 const SizedBox(height: 8),
-                _fieldLabel('Kuota Relawan'),
+                _fieldLabel('Kuota Relawan (Opsional)'),
                 _textField(
                   controller: _volunteerSlotsController,
                   hint: 'Jumlah relawan yang dibutuhkan',
@@ -334,7 +433,7 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
               ],
 
               // Periode Campaign
-              _fieldLabel('Periode Campaign'),
+              _fieldLabel('Periode Campaign (Opsional)'),
               Row(
                 children: [
                   Expanded(
@@ -376,26 +475,28 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
                   ),
                   child: _isSubmitting
                       ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
-                          ),
-                        )
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: Colors.white,
+                    ),
+                  )
                       : Text(
-                          'Buat Campaign',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    'Buat Campaign',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
 
               const SizedBox(height: 12),
               Text(
-                'Campaign yang dibuat oleh member akan membutuhkan persetujuan admin/founder komunitas terlebih dahulu.',
+                widget.communityId != null
+                    ? 'Campaign yang dibuat oleh member akan membutuhkan persetujuan admin/founder komunitas terlebih dahulu.'
+                    : 'Campaign personal akan langsung aktif setelah dibuat.',
                 style: GoogleFonts.poppins(
                   fontSize: 11,
                   color: Colors.grey.shade500,
@@ -410,16 +511,16 @@ class _CreateCampaignScreenState extends State<CreateCampaignScreen> {
   }
 
   Widget _fieldLabel(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          text,
-          style: GoogleFonts.poppins(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey.shade700,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      text,
+      style: GoogleFonts.poppins(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w600,
+        color: Colors.grey.shade700,
+      ),
+    ),
+  );
 
   Widget _textField({
     required TextEditingController controller,

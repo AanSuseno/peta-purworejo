@@ -186,6 +186,7 @@ model donations {
   community_approved_at                             DateTime?            @db.Timestamp(6)
   donation_campaigns                                donation_campaigns   @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction)
   communities                                       communities          @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_donations_community")
+  users_donations_donor_idTousers                   users?               @relation("donations_donor_idTousers", fields: [donor_id], references: [user_id], onUpdate: NoAction, map: "fk_donations_donor_id")
   users_donations_representation_verified_byTousers users?               @relation("donations_representation_verified_byTousers", fields: [representation_verified_by], references: [user_id], onUpdate: NoAction, map: "fk_donations_rep_verified")
   users_donations_representative_idTousers          users?               @relation("donations_representative_idTousers", fields: [representative_id], references: [user_id], onUpdate: NoAction, map: "fk_donations_representative")
 
@@ -397,6 +398,7 @@ model users {
   community_members                                        community_members[]
   donation_campaigns_donation_campaigns_approved_byTousers donation_campaigns[]      @relation("donation_campaigns_approved_byTousers")
   donation_campaigns                                       donation_campaigns[]
+  donations_donations_donor_idTousers                      donations[]               @relation("donations_donor_idTousers")
   donations_donations_representation_verified_byTousers    donations[]               @relation("donations_representation_verified_byTousers")
   donations_donations_representative_idTousers             donations[]               @relation("donations_representative_idTousers")
   event_participants                                       event_participants[]

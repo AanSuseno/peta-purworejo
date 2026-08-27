@@ -46,9 +46,8 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
   int _totalPages = 1;
   bool _hasMore = true;
 
-  // Filter. 'pending' hanya relevan/berguna untuk admin/founder yang perlu
-  // meninjau campaign yang menunggu persetujuan.
-  String _selectedFilter = 'all';
+  // Filter. Default ke 'active' karena 'all' dihilangkan
+  String _selectedFilter = 'active';
 
   @override
   void initState() {
@@ -89,10 +88,6 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
     bool showPending = false;
 
     switch (_selectedFilter) {
-      case 'all':
-        statusFilter = null;
-        showPending = false;
-        break;
       case 'active':
         statusFilter = 'active';
         showPending = false;
@@ -110,7 +105,7 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
         showPending = false;
         break;
       default:
-        statusFilter = null;
+        statusFilter = 'active'; // fallback ke active
         showPending = false;
     }
 
@@ -331,14 +326,7 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            _FilterChip(
-                              label: 'Semua',
-                              selected: _selectedFilter == 'all',
-                              onTap: () {
-                                setState(() => _selectedFilter = 'all');
-                                _loadCampaigns(reset: true);
-                              },
-                            ),
+                            // Filter chips - "Semua" dihilangkan
                             _FilterChip(
                               label: 'Aktif',
                               selected: _selectedFilter == 'active',
@@ -362,6 +350,14 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
                               selected: _selectedFilter == 'completed',
                               onTap: () {
                                 setState(() => _selectedFilter = 'completed');
+                                _loadCampaigns(reset: true);
+                              },
+                            ),
+                            _FilterChip(
+                              label: 'Dibatalkan',
+                              selected: _selectedFilter == 'cancelled',
+                              onTap: () {
+                                setState(() => _selectedFilter = 'cancelled');
                                 _loadCampaigns(reset: true);
                               },
                             ),
@@ -428,13 +424,13 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _buildShimmerFilterChip(width: 70),
-                    const SizedBox(width: 6),
                     _buildShimmerFilterChip(width: 60),
                     const SizedBox(width: 6),
                     _buildShimmerFilterChip(width: 120),
                     const SizedBox(width: 6),
                     _buildShimmerFilterChip(width: 70),
+                    const SizedBox(width: 6),
+                    _buildShimmerFilterChip(width: 85),
                   ],
                 ),
               ),
