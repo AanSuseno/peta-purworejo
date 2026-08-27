@@ -93,7 +93,7 @@ class _CampaignListScreenState extends State<CampaignListScreen> {
         showPending = false;
         break;
       case 'pending_approval':
-        statusFilter = null;
+        statusFilter = 'pending';  // Ubah dari null ke 'pending'
         showPending = true;
         break;
       case 'completed':

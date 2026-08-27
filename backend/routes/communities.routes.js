@@ -1,9 +1,13 @@
 // routes/communities.routes.js
 import express from "express";
-import {
+
+const {
     getAllCommunities,
     getCommunityById,
+    getCommunityBySlug,
+    searchCommunities,
     getCommunityMembers,
+    searchCommunityMembers,
     createCommunity,
     updateCommunity,
     deleteCommunity,
@@ -16,9 +20,8 @@ import {
     uploadCommunityBanner,
     uploadCommunityMedia,
     deleteCommunityLogo,
-    deleteCommunityBanner,
-    searchCommunityMembers
-} from "../controllers/communities.controller.js";
+    deleteCommunityBanner
+} = await import("../controllers/communities/index.js");
 import {
     authenticate,
     isCommunityAdminOrFounder,
