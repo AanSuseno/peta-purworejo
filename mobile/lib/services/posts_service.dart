@@ -479,9 +479,8 @@ class PostsService {
         _debugLog(tag, '❌ Bad Request: ${data['message']}');
         if (data['errors'] != null) {
           final errors = data['errors'] as Map<String, dynamic>;
-          final errorMessages = errors.values
-              .map((e) => e.toString())
-              .join(', ');
+          final errorMessages =
+              errors.values.map((e) => e.toString()).join(', ');
           _debugLog(tag, 'Validation errors: $errorMessages');
           throw Exception(
             '${data['message'] ?? 'Validasi gagal'}: $errorMessages',
@@ -677,9 +676,8 @@ class PostsService {
         _debugLog(tag, '❌ Bad Request: ${data['message']}');
         if (data['errors'] != null) {
           final errors = data['errors'] as Map<String, dynamic>;
-          final errorMessages = errors.values
-              .map((e) => e.toString())
-              .join(', ');
+          final errorMessages =
+              errors.values.map((e) => e.toString()).join(', ');
           _debugLog(tag, 'Validation errors: $errorMessages');
           throw Exception(
             '${data['message'] ?? 'Validasi gagal'}: $errorMessages',
@@ -759,9 +757,8 @@ class PostsService {
     if (eventLongitude != null) body['event_longitude'] = eventLongitude;
     if (eventQuota != null) body['event_quota'] = eventQuota;
     if (eventRegistrationLink != null)
-      body['event_registration_link'] = eventRegistrationLink.isEmpty
-          ? null
-          : eventRegistrationLink;
+      body['event_registration_link'] =
+          eventRegistrationLink.isEmpty ? null : eventRegistrationLink;
     if (eventStatus != null && eventStatus.isNotEmpty)
       body['event_status'] = eventStatus;
 
@@ -1468,6 +1465,85 @@ class PostsService {
       throw Exception('Gagal terhubung ke server');
     } catch (e) {
       _debugError(tag, '❌ Error: $e');
+      rethrow;
+    }
+  }
+
+  Future<PostPage> fetchPublicEvents({
+    required String token,
+    int page = 1,
+    int limit = 10,
+    String? search,
+    String? status,
+  }) async {
+    const tag = 'fetchPublicEvents';
+    _debugLog(tag, 'Fetching public events, page: $page');
+    _debugLog(tag, 'Search: $search, Status: $status');
+
+    final queryParams = <String, String>{
+      'page': '$page',
+      'limit': '$limit',
+      if (search != null && search.isNotEmpty) 'search': search,
+      if (status != null && status.isNotEmpty) 'status': status,
+    };
+
+    final uri = Uri.parse('$baseUrl/posts/events/public')
+        .replace(queryParameters: queryParams);
+
+    _debugLog(tag, 'URI: $uri');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      _debugResponse(tag, response);
+
+      // Handle HTML response
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        final rawList = (data['data'] as List?) ?? [];
+        final pagination = data['pagination'] as Map<String, dynamic>?;
+        final filters = data['filters'] as Map<String, dynamic>?;
+
+        _debugLog(tag, '✅ Found ${rawList.length} events');
+        _debugLog(tag, '📊 Total: ${pagination?['total'] ?? 0}');
+        _debugLog(tag,
+            '📄 Page: ${pagination?['page'] ?? page} of ${pagination?['totalPages'] ?? 1}');
+
+        return PostPage(
+          posts: rawList
+              .whereType<Map>()
+              .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+              .toList(),
+          page: pagination?['page'] ?? page,
+          totalPages: pagination?['totalPages'] ?? 1,
+          total: pagination?['total'] ?? 0,
+        );
+      }
+
+      if (response.statusCode == 401) {
+        _debugLog(tag, 'Token tidak valid atau kadaluarsa');
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      _debugError(
+        tag,
+        'Status code: ${response.statusCode}, message: ${data['message']}',
+      );
+      throw Exception(
+        data['message'] ?? 'Gagal memuat event publik (${response.statusCode})',
+      );
+    } on http.ClientException catch (e) {
+      _debugError(tag, 'ClientException: $e');
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
       rethrow;
     }
   }

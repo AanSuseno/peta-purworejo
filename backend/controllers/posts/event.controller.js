@@ -339,3 +339,143 @@ export const updateParticipantStatus = async (req, res) => {
         });
     }
 };
+
+export const getAllPublicEvents = async (req, res) => {
+    console.log(req.query)
+    try {
+        const { page = 1, limit = 20, search, status } = req.query;
+        
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const take = parseInt(limit);
+
+        // Build where clause
+        const where = {
+            post_type: 'event',
+            visibility: 'public',
+            status: 'active'
+        };
+
+        // Filter by search (title or content)
+        if (search) {
+            where.OR = [
+                { title: { contains: search, mode: 'insensitive' } },
+                { content: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+
+        // Filter by event status
+        if (status && ['upcoming', 'ongoing', 'completed', 'cancelled'].includes(status)) {
+            where.event_status = status;
+        }
+
+        // Get current date for filtering upcoming events
+        const currentDate = new Date();
+        
+        // If no status filter, exclude completed and cancelled by default
+        if (!status) {
+            where.event_status = {
+                notIn: ['completed', 'cancelled']
+            };
+        }
+
+        // Get events with pagination
+        const [events, total] = await Promise.all([
+            prisma.posts.findMany({
+                where,
+                include: {
+                    users: {
+                        select: {
+                            user_id: true,
+                            full_name: true,
+                            profile_picture: true
+                        }
+                    },
+                    communities: {
+                        select: {
+                            community_id: true,
+                            community_name: true,
+                            logo: true,
+                            community_slug: true
+                        }
+                    },
+                    post_media: {
+                        select: {
+                            media_id: true,
+                            media_url: true,
+                            media_type: true,
+                            is_cover: true
+                        },
+                        orderBy: {
+                            sort_order: 'asc'
+                        }
+                    },
+                    event_participants: {
+                        where: {
+                            status: 'registered'
+                        },
+                        select: {
+                            participant_id: true,
+                            user_id: true,
+                            status: true
+                        }
+                    },
+                    _count: {
+                        select: {
+                            event_participants: {
+                                where: {
+                                    status: 'registered'
+                                }
+                            },
+                            post_likes: true,
+                            post_comments: true
+                        }
+                    }
+                },
+                orderBy: [
+                    {
+                        event_date: 'asc' // Upcoming events first
+                    },
+                    {
+                        created_at: 'desc' // For events with same date, newest first
+                    }
+                ],
+                skip,
+                take
+            }),
+            prisma.posts.count({ where })
+        ]);
+
+        // Format response data
+        const formattedEvents = events.map(event => ({
+            ...event,
+            event_registered_count: event._count.event_participants,
+            total_likes: event._count.post_likes,
+            total_comments: event._count.post_comments,
+            participants: event.event_participants,
+        }));
+
+        return res.json({
+            success: true,
+            message: "Berhasil mengambil daftar event publik",
+            data: formattedEvents,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                totalPages: Math.ceil(total / parseInt(limit))
+            },
+            filters: {
+                search: search || null,
+                status: status || null
+            }
+        });
+
+    } catch (error) {
+        console.error("Get All Public Events Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Gagal mengambil daftar event",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};

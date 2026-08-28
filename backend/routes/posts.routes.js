@@ -16,7 +16,8 @@ import {
     getCommentsByPost,
     createComment,
     updateComment,
-    deleteComment
+    deleteComment,
+    getAllPublicEvents
 } from "../controllers/posts/index.js";
 import {
     authenticate
@@ -67,6 +68,8 @@ router.post("/posts/:id/like", authenticate, toggleLikePost);
 // ============================================
 // 🎯 EVENT PARTICIPANTS
 // ============================================
+
+router.get("/events/public", getAllPublicEvents);
 
 // Register for Event
 router.post("/posts/:id/event/register", authenticate, registerForEvent);
