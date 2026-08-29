@@ -3,21 +3,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/constants/colors.dart';
 import 'package:mobile/services/auth_service.dart';
+import 'package:mobile/screen/post_detail_screen.dart';
 
 class EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
-  final bool isRegistered;
-  final VoidCallback onRegister;
-  final VoidCallback onCancel;
-  final VoidCallback onTap;
+  final int communityId;
 
   const EventCard({
     super.key,
     required this.event,
-    required this.isRegistered,
-    required this.onRegister,
-    required this.onCancel,
-    required this.onTap,
+    required this.communityId,
   });
 
   String? _resolveUrl(String? path) {
@@ -26,6 +21,35 @@ class EventCard extends StatelessWidget {
       return path;
     }
     return '${AuthService.baseUrl}$path';
+  }
+
+  String _getCountdown(DateTime eventDate) {
+    final now = DateTime.now();
+    final difference = eventDate.difference(now);
+
+    if (difference.isNegative) {
+      return 'Sudah lewat';
+    }
+
+    final days = difference.inDays;
+    final hours = difference.inHours % 24;
+    final minutes = difference.inMinutes % 60;
+
+    if (days > 30) {
+      final months = (days / 30).floor();
+      return '$months bulan lagi';
+    } else if (days > 0) {
+      if (days == 1) return '1 hari lagi';
+      return '$days hari lagi';
+    } else if (hours > 0) {
+      if (hours == 1) return '1 jam lagi';
+      return '$hours jam lagi';
+    } else if (minutes > 0) {
+      if (minutes == 1) return '1 menit lagi';
+      return '$minutes menit lagi';
+    } else {
+      return 'Sebentar lagi';
+    }
   }
 
   String _formatDate(String? dateString) {
@@ -41,7 +65,6 @@ class EventCard extends StatelessWidget {
   String _formatTime(String? timeString) {
     if (timeString == null) return '';
     try {
-      // Handle various time formats
       final time = DateFormat.Hm().parse(timeString);
       return DateFormat('HH:mm').format(time);
     } catch (e) {
@@ -75,20 +98,63 @@ class EventCard extends StatelessWidget {
     }
   }
 
+  void _navigateToDetail(BuildContext context) {
+    final postId = event['post_id'] as int;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(
+          postId: postId,
+          communityId: communityId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final title = event['title'] as String? ?? 'Tanpa Judul';
-    final content = event['content'] as String?;
+    final title = event['communities']['community_name'] +
+            " >> " +
+            event['title'] as String? ??
+        'Tanpa Judul';
     final eventDate = event['event_date'] as String?;
     final eventStartTime = event['event_start_time'] as String?;
     final eventEndTime = event['event_end_time'] as String?;
     final eventLocation = event['event_location'] as String?;
-    final participantsCount = event['participants_count'] ?? 0;
-    final media = event['media'] as List? ?? [];
-    final coverImage = media.isNotEmpty ? media.first['url'] as String? : null;
+    final media = event['post_media'] as List? ?? [];
+    final coverImage =
+        media.isNotEmpty ? media.first['media_url'] as String? : null;
     final status = event['event_status'] as String?;
     final isFull = event['is_full'] == true;
-    final isEventStarted = event['is_event_started'] == true;
+
+    DateTime? parsedDate;
+    if (eventDate != null) {
+      try {
+        parsedDate = DateTime.parse(eventDate);
+        if (eventStartTime != null) {
+          final timeParts = eventStartTime.split(':');
+          if (timeParts.length >= 2) {
+            parsedDate = DateTime(
+              parsedDate.year,
+              parsedDate.month,
+              parsedDate.day,
+              int.parse(timeParts[0]),
+              int.parse(timeParts[1]),
+            );
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+
+    final showCountdown = parsedDate != null && status != 'past';
+    final countdownText = showCountdown ? _getCountdown(parsedDate!) : null;
+    final isCountdownInDays =
+        showCountdown && parsedDate!.difference(DateTime.now()).inDays > 0;
+    final isCountdownInHours = showCountdown &&
+        parsedDate!.difference(DateTime.now()).inDays == 0 &&
+        parsedDate!.difference(DateTime.now()).inHours > 0;
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -106,15 +172,14 @@ class EventCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onTap,
+          onTap: () => _navigateToDetail(context),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Cover Image
               Stack(
                 children: [
                   SizedBox(
-                    height: 120,
+                    height: 200,
                     width: double.infinity,
                     child: coverImage != null
                         ? Image.network(
@@ -124,7 +189,6 @@ class EventCard extends StatelessWidget {
                           )
                         : _coverFallback(),
                   ),
-                  // Status badge
                   Positioned(
                     top: 12,
                     right: 12,
@@ -154,7 +218,6 @@ class EventCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Full badge
                   if (isFull)
                     Positioned(
                       top: 12,
@@ -185,6 +248,44 @@ class EventCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (showCountdown && status != 'past')
+                    Positioned(
+                      bottom: 12,
+                      left: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isCountdownInHours ||
+                                      (!isCountdownInDays &&
+                                          !isCountdownInHours)
+                                  ? Icons.access_time
+                                  : Icons.calendar_today,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              countdownText!,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
               Padding(
@@ -192,7 +293,6 @@ class EventCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title
                     Text(
                       title,
                       style: GoogleFonts.poppins(
@@ -204,28 +304,53 @@ class EventCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    // Date
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.calendar_today,
-                          size: 14,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            _formatDate(eventDate),
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
+                    if (showCountdown && status != 'past') ...[
+                      Row(
+                        children: [
+                          Icon(
+                            isCountdownInHours ||
+                                    (!isCountdownInDays && !isCountdownInHours)
+                                ? Icons.access_time
+                                : Icons.calendar_today,
+                            size: 14,
+                            color: Colors.grey.shade500,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              countdownText!,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.primary,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    // Time
-                    if (eventStartTime != null)
+                        ],
+                      ),
+                    ] else if (eventDate != null) ...[
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            size: 14,
+                            color: Colors.grey.shade500,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _formatDate(eventDate),
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (eventStartTime != null &&
+                        (status == 'past' || eventDate == null))
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Row(
@@ -246,7 +371,6 @@ class EventCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                    // Location
                     if (eventLocation != null && eventLocation.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
@@ -272,66 +396,22 @@ class EventCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                    // Description
-                    if (content != null && content.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        content,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 12.5,
-                          color: Colors.grey.shade600,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    // Bottom row: participants count + action button
+                    const SizedBox(height: 8),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.people_outline,
-                              size: 16,
-                              color: Colors.grey.shade500,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$participantsCount peserta',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        // Action button
-                        if (isEventStarted && status != 'past')
-                          _buildEventStatusButton(),
-                        if (!isEventStarted && status != 'past')
-                          _buildActionButton(),
-                        if (status == 'past')
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              'Selesai',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
+                        Text(
+                          'Tap untuk detail',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.grey.shade400,
                           ),
+                        ),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: Colors.grey.shade400,
+                        ),
                       ],
                     ),
                   ],
@@ -339,129 +419,6 @@ class EventCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton() {
-    if (isRegistered) {
-      return GestureDetector(
-        onTap: onCancel,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 6,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.orange.shade300),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.check_circle,
-                size: 14,
-                color: Colors.orange.shade600,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Terdaftar',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.orange.shade600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: onRegister,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 6,
-        ),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [AppColors.primary, AppColors.primaryDark],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Text(
-          'Daftar',
-          style: GoogleFonts.poppins(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEventStatusButton() {
-    if (isRegistered) {
-      return Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 6,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.green.shade50,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.green.shade300),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.check_circle,
-              size: 14,
-              color: Colors.green.shade600,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'Bergabung',
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Colors.green.shade600,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 6,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        'Sedang Berlangsung',
-        style: GoogleFonts.poppins(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: Colors.grey.shade600,
         ),
       ),
     );

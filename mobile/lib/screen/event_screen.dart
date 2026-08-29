@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../provider/auth_provider.dart';
-import '../services/auth_service.dart';
 import '../services/posts_service.dart';
 import '../widgets/event_card.dart';
 
@@ -446,13 +445,8 @@ class _EventScreenState extends State<EventScreen> {
           );
         }
         return EventCard(
-          event: _events[index],
-          isRegistered: _isRegistered(_events[index]['post_id'] as int),
-          onRegister: () => _handleRegister(_events[index]['post_id'] as int),
-          onCancel: () =>
-              _handleCancelRegistration(_events[index]['post_id'] as int),
-          onTap: () => _openEventDetail(_events[index]),
-        );
+            event: _events[index],
+            communityId: _events[index]['communities']['community_id']);
       },
     );
   }
