@@ -13,6 +13,7 @@ import usersRoutes from "./routes/users.routes.js";
 import communitiesRoutes from "./routes/communities.routes.js";
 import postsRoutes from "./routes/posts.routes.js";
 import donationRoutes from "./routes/donations.routes.js";
+import scoresRoutes from "./routes/scores.routes.js";
 
 // Import cleanup functions
 import { cleanupUnusedFiles, getFileStats } from "./utils/cleanup.js";
@@ -106,6 +107,7 @@ app.use("/users", usersRoutes);
 app.use("/communities", communitiesRoutes);
 app.use("/posts", postsRoutes);
 app.use("/donations", donationRoutes);
+app.use("/scores", scoresRoutes);
 
 // Test upload
 app.get("/test-upload", (req, res) => {

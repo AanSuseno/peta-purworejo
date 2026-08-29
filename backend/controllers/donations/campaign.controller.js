@@ -1,5 +1,6 @@
 import prisma from "../../lib/prisma.js";
-import {checkCommunityAdmin, isSystemAdmin} from './helpers.js';
+import { checkCommunityAdmin, isSystemAdmin } from './helpers.js';
+import { addCommunityScore } from "../score.controller.js";
 
 export const getCampaigns = async (req, res) => {
     try {
@@ -82,7 +83,7 @@ export const getCampaigns = async (req, res) => {
 
         // 🔥 FIX: Ambil count volunteer untuk setiap campaign secara terpisah
         const campaignIds = campaigns.map(c => c.campaign_id);
-        
+
         // Get volunteer counts for all campaigns
         const volunteerCounts = await prisma.volunteer_registrations.groupBy({
             by: ['campaign_id'],
@@ -103,7 +104,7 @@ export const getCampaigns = async (req, res) => {
             ...campaign,
             total_donors: campaign._count.donations,
             total_volunteers: volunteerCountMap[campaign.campaign_id] || 0, // 🔥 FIX: Ambil dari map
-            progress: campaign.target_amount 
+            progress: campaign.target_amount
                 ? Math.min((parseFloat(campaign.collected_amount) / parseFloat(campaign.target_amount)) * 100, 100)
                 : 0,
             // Tambahkan info approval
@@ -509,7 +510,7 @@ export const getCampaignStats = async (req, res) => {
                 status: campaign.status,
                 target_amount: campaign.target_amount,
                 collected_amount: campaign.collected_amount,
-                progress: campaign.target_amount 
+                progress: campaign.target_amount
                     ? Math.min((parseFloat(campaign.collected_amount) / parseFloat(campaign.target_amount)) * 100, 100)
                     : 0,
                 total_donors: donationStats._count,
@@ -798,187 +799,195 @@ export const getCampaignDonationSummary = async (req, res) => {
 
 // CREATE Campaign
 export const createCampaign = async (req, res) => {
-  try {
-    const {
-      community_id,
-      title,
-      description,
-      donation_type,
-      target_amount,
-      payment_info, // ✅ Ganti dari bank_account_info & ewallet_info
-      goods_description,
-      volunteer_needs,
-      volunteer_slots,
-      start_date,
-      end_date
-    } = req.body;
+    try {
+        const {
+            community_id,
+            title,
+            description,
+            donation_type,
+            target_amount,
+            payment_info, // ✅ Ganti dari bank_account_info & ewallet_info
+            goods_description,
+            volunteer_needs,
+            volunteer_slots,
+            start_date,
+            end_date
+        } = req.body;
 
-    // ✅ VALIDASI
-    if (!title || !donation_type) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Title and donation type are required' 
-      });
-    }
-
-    // ✅ VALIDASI DONATION_TYPE
-    const validTypes = ['money', 'goods', 'volunteer'];
-    if (!validTypes.includes(donation_type)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid donation type. Must be: money, goods, or volunteer' 
-      });
-    }
-
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
-      });
-    }
-
-    // ✅ CEK COMMUNITY MEMBERSHIP (jika ada community_id)
-    if (community_id) {
-      const communityIdInt = parseInt(community_id);
-      
-      const isMember = await prisma.community_members.findUnique({
-        where: {
-          community_id_user_id: {
-            community_id: communityIdInt,
-            user_id: userId
-          }
+        // ✅ VALIDASI
+        if (!title || !donation_type) {
+            return res.status(400).json({
+                success: false,
+                message: 'Title and donation type are required'
+            });
         }
-      });
 
-      const isAdmin = await prisma.community_admins.findUnique({
-        where: {
-          community_id_user_id: {
-            community_id: communityIdInt,
-            user_id: userId
-          }
+        // ✅ VALIDASI DONATION_TYPE
+        const validTypes = ['money', 'goods', 'volunteer'];
+        if (!validTypes.includes(donation_type)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid donation type. Must be: money, goods, or volunteer'
+            });
         }
-      });
 
-      if (!isMember && !isAdmin) {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'You must be an active member of this community to create a campaign' 
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not authenticated'
+            });
+        }
+
+        // ✅ CEK COMMUNITY MEMBERSHIP (jika ada community_id)
+        if (community_id) {
+            const communityIdInt = parseInt(community_id);
+
+            const isMember = await prisma.community_members.findUnique({
+                where: {
+                    community_id_user_id: {
+                        community_id: communityIdInt,
+                        user_id: userId
+                    }
+                }
+            });
+
+            const isAdmin = await prisma.community_admins.findUnique({
+                where: {
+                    community_id_user_id: {
+                        community_id: communityIdInt,
+                        user_id: userId
+                    }
+                }
+            });
+
+            if (!isMember && !isAdmin) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You must be an active member of this community to create a campaign'
+                });
+            }
+
+            // ✅ CEK BATAS CAMPAIGN AKTIF
+            const activeCampaigns = await prisma.donation_campaigns.count({
+                where: {
+                    community_id: communityIdInt,
+                    status: 'active',
+                    approval_status: 'approved'
+                }
+            });
+
+            if (activeCampaigns >= 5) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Maximum 5 active campaigns per community'
+                });
+            }
+        }
+
+        // ✅ CEK TANGGAL
+        const startDate = start_date ? new Date(start_date) : new Date();
+        const endDate = end_date ? new Date(end_date) : null;
+
+        if (endDate && endDate < startDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'End date must be after start date'
+            });
+        }
+
+        // ✅ CREATE CAMPAIGN - Perbaikan field
+        const campaign = await prisma.donation_campaigns.create({
+            data: {
+                creator_id: userId,
+                community_id: community_id ? parseInt(community_id) : null,
+                title: title.trim(),
+                description: description || null,
+                donation_type: donation_type,
+                target_amount: target_amount ? parseFloat(target_amount) : null,
+                payment_info: payment_info || null, // ✅ Ganti dengan payment_info
+                goods_description: goods_description || null,
+                volunteer_needs: volunteer_needs || null,
+                volunteer_slots: volunteer_slots ? parseInt(volunteer_slots) : null,
+                start_date: startDate,
+                end_date: endDate,
+                status: 'pending',
+                approval_status: 'pending', // ✅ Sudah ada di DB
+                collected_amount: 0,
+                total_donors: 0
+                // ❌ HAPUS: volunteer_registered (tidak ada di DB)
+            },
+            include: {
+                communities: {
+                    select: {
+                        community_id: true,
+                        community_name: true,
+                        logo: true
+                    }
+                },
+                users: {
+                    select: {
+                        user_id: true,
+                        full_name: true,
+                        profile_picture: true,
+                        email: true
+                    }
+                }
+            }
         });
-      }
 
-      // ✅ CEK BATAS CAMPAIGN AKTIF
-      const activeCampaigns = await prisma.donation_campaigns.count({
-        where: {
-          community_id: communityIdInt,
-          status: 'active',
-          approval_status: 'approved'
-        }
-      });
-
-      if (activeCampaigns >= 5) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Maximum 5 active campaigns per community' 
+        await addCommunityScore(prisma, {
+            communityId: campaign.community_id,
+            score: 20,
+            scoreType: 'campaign created',
+            description: `Campaign created by User_id: ${req.user.id}`,
+            referenceId: campaign.campaign_id,
         });
-      }
-    }
 
-    // ✅ CEK TANGGAL
-    const startDate = start_date ? new Date(start_date) : new Date();
-    const endDate = end_date ? new Date(end_date) : null;
-
-    if (endDate && endDate < startDate) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'End date must be after start date' 
-      });
-    }
-
-    // ✅ CREATE CAMPAIGN - Perbaikan field
-    const campaign = await prisma.donation_campaigns.create({
-      data: {
-        creator_id: userId,
-        community_id: community_id ? parseInt(community_id) : null,
-        title: title.trim(),
-        description: description || null,
-        donation_type: donation_type,
-        target_amount: target_amount ? parseFloat(target_amount) : null,
-        payment_info: payment_info || null, // ✅ Ganti dengan payment_info
-        goods_description: goods_description || null,
-        volunteer_needs: volunteer_needs || null,
-        volunteer_slots: volunteer_slots ? parseInt(volunteer_slots) : null,
-        start_date: startDate,
-        end_date: endDate,
-        status: 'pending',
-        approval_status: 'pending', // ✅ Sudah ada di DB
-        collected_amount: 0,
-        total_donors: 0
-        // ❌ HAPUS: volunteer_registered (tidak ada di DB)
-      },
-      include: {
-        communities: {
-          select: {
-            community_id: true,
-            community_name: true,
-            logo: true
-          }
-        },
-        users: {
-          select: {
-            user_id: true,
-            full_name: true,
-            profile_picture: true,
-            email: true
-          }
+        // ✅ KIRIM NOTIFIKASI KE COMMUNITY ADMINS
+        if (community_id) {
+            try {
+                await createNotification({
+                    type: 'campaign_pending',
+                    title: 'New Campaign Pending Approval',
+                    content: `Campaign "${title}" needs your approval`,
+                    target_community_id: parseInt(community_id),
+                    target_role: 'admin',
+                    created_by: userId
+                });
+            } catch (notifError) {
+                console.error('Error sending notification:', notifError);
+            }
         }
-      }
-    });
 
-    // ✅ KIRIM NOTIFIKASI KE COMMUNITY ADMINS
-    if (community_id) {
-      try {
-        await createNotification({
-          type: 'campaign_pending',
-          title: 'New Campaign Pending Approval',
-          content: `Campaign "${title}" needs your approval`,
-          target_community_id: parseInt(community_id),
-          target_role: 'admin',
-          created_by: userId
+        res.status(201).json({
+            success: true,
+            data: campaign,
+            message: 'Campaign created successfully. Waiting for admin approval.'
         });
-      } catch (notifError) {
-        console.error('Error sending notification:', notifError);
-      }
+
+    } catch (error) {
+        console.error('Error createCampaign:', error);
+
+        if (error.code === 'P2002') {
+            return res.status(400).json({
+                success: false,
+                message: 'A campaign with this title already exists'
+            });
+        }
+
+        if (error.code === 'P2003') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid community or user reference'
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to create campaign'
+        });
     }
-
-    res.status(201).json({ 
-      success: true, 
-      data: campaign,
-      message: 'Campaign created successfully. Waiting for admin approval.'
-    });
-
-  } catch (error) {
-    console.error('Error createCampaign:', error);
-    
-    if (error.code === 'P2002') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'A campaign with this title already exists' 
-      });
-    }
-
-    if (error.code === 'P2003') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid community or user reference' 
-      });
-    }
-
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to create campaign' 
-    });
-  }
 };
 
 // UPDATE Campaign
@@ -1195,6 +1204,14 @@ export const deleteCampaign = async (req, res) => {
                 status: 'cancelled',
                 updated_at: new Date()
             }
+        });
+
+        await addCommunityScore(prisma, {
+            communityId: campaign.community_id,
+            score: -20,
+            scoreType: 'campaign deleted',
+            description: `Campaign deleted by User_id: ${req.user.id}`,
+            referenceId: campaign.campaign_id,
         });
 
         return res.json({

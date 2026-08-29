@@ -178,16 +178,22 @@ class EventCard extends StatelessWidget {
             children: [
               Stack(
                 children: [
-                  SizedBox(
-                    height: 200,
-                    width: double.infinity,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxHeight: 500,
+                    ),
                     child: coverImage != null
                         ? Image.network(
                             _resolveUrl(coverImage)!,
-                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            fit: BoxFit.fitWidth,
                             errorBuilder: (_, __, ___) => _coverFallback(),
                           )
-                        : _coverFallback(),
+                        : SizedBox(
+                            height: 200,
+                            width: double.infinity,
+                            child: _coverFallback(),
+                          ),
                   ),
                   Positioned(
                     top: 12,

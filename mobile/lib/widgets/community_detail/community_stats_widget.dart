@@ -1,19 +1,18 @@
 // widgets/community_detail/community_stats_widget.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:mobile/constants/colors.dart';
 
 class CommunityStatsWidget extends StatelessWidget {
   final int memberCount;
   final int postCount;
-  final int eventCount;
+  final int? totalScore;
   final VoidCallback? onMembersTap;
 
   const CommunityStatsWidget({
     super.key,
     required this.memberCount,
     required this.postCount,
-    required this.eventCount,
+    this.totalScore,
     this.onMembersTap,
   });
 
@@ -50,13 +49,15 @@ class CommunityStatsWidget extends StatelessWidget {
               value: '$postCount',
             ),
           ),
-          _statDivider(),
-          Expanded(
-            child: _StatItem(
-              label: 'Event',
-              value: '$eventCount',
+          if (totalScore != null) ...[
+            _statDivider(),
+            Expanded(
+              child: _StatItem(
+                label: 'Skor',
+                value: '$totalScore',
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -69,19 +70,40 @@ class CommunityStatsWidget extends StatelessWidget {
 class _StatItem extends StatelessWidget {
   final String label;
   final String value;
-  const _StatItem({required this.label, required this.value});
+  final IconData? icon;
+  final Color? iconColor;
+
+  const _StatItem({
+    required this.label,
+    required this.value,
+    this.icon,
+    this.iconColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 14,
+                color: iconColor ?? Colors.grey.shade600,
+              ),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 2),
         Text(

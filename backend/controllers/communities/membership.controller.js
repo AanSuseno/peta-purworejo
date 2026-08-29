@@ -1,4 +1,5 @@
 import prisma from "../../lib/prisma.js";
+import { addCommunityScore } from "../score.controller.js";
 
 export const getCommunityMembers = async (req, res) => {
     try {
@@ -151,6 +152,13 @@ export const joinCommunity = async (req, res) => {
             }
         });
 
+        await addCommunityScore(prisma, {
+            communityId: parseInt(id),
+            score: 2,
+            scoreType: 'member joined',
+            description: 'User_id: '+userId+' joined',
+        });
+
         return res.json({
             success: true,
             message: "Berhasil bergabung dengan komunitas",
@@ -226,6 +234,14 @@ export const leaveCommunity = async (req, res) => {
                 },
                 updated_at: new Date()
             }
+        });
+
+
+        await addCommunityScore(prisma, {
+            communityId: parseInt(id),
+            score: -2,
+            scoreType: 'member leave',
+            description: 'User_id: '+userId+' leaved',
         });
 
         return res.json({

@@ -41,20 +41,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   TimeOfDay? _selectedStartTime;
   TimeOfDay? _selectedEndTime;
   final _eventLocationController = TextEditingController();
-  final _eventLatitudeController = TextEditingController();
-  final _eventLongitudeController = TextEditingController();
-  final _eventQuotaController = TextEditingController();
-  final _eventRegistrationLinkController = TextEditingController();
 
   @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
     _eventLocationController.dispose();
-    _eventLatitudeController.dispose();
-    _eventLongitudeController.dispose();
-    _eventQuotaController.dispose();
-    _eventRegistrationLinkController.dispose();
     super.dispose();
   }
 
@@ -147,18 +139,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final endTime = _selectedEndTime != null
           ? '${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}:00'
           : null;
-      final latitude = _eventLatitudeController.text.isNotEmpty
-          ? double.tryParse(_eventLatitudeController.text)
-          : null;
-      final longitude = _eventLongitudeController.text.isNotEmpty
-          ? double.tryParse(_eventLongitudeController.text)
-          : null;
-      final quota = _eventQuotaController.text.isNotEmpty
-          ? int.tryParse(_eventQuotaController.text)
-          : null;
+
+      // Hapus parsing latitude, longitude, quota
+      // Kirim null semua
 
       if (_selectedFiles.isEmpty) {
-        // Post text only
         result = await _service.createPost(
           token: token,
           communityId: widget.communityId,
@@ -169,14 +154,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           eventDate: eventDate,
           eventStartTime: startTime,
           eventEndTime: endTime,
-          eventLocation: _eventLocationController.text.trim(),
-          eventLatitude: latitude,
-          eventLongitude: longitude,
-          eventQuota: quota,
-          eventRegistrationLink: _eventRegistrationLinkController.text.trim(),
+          eventLocation: _eventLocationController.text.trim().isNotEmpty
+              ? _eventLocationController.text.trim()
+              : null,
+          eventLatitude: null, // ← selalu null
+          eventLongitude: null, // ← selalu null
+          eventQuota: null, // ← selalu null
+          eventRegistrationLink: null, // ← selalu null
         );
       } else {
-        // Post with media
         result = await _service.createPostWithMedia(
           token: token,
           communityId: widget.communityId,
@@ -188,11 +174,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           eventDate: eventDate,
           eventStartTime: startTime,
           eventEndTime: endTime,
-          eventLocation: _eventLocationController.text.trim(),
-          eventLatitude: latitude,
-          eventLongitude: longitude,
-          eventQuota: quota,
-          eventRegistrationLink: _eventRegistrationLinkController.text.trim(),
+          eventLocation: _eventLocationController.text.trim().isNotEmpty
+              ? _eventLocationController.text.trim()
+              : null,
+          eventLatitude: null, // ← selalu null
+          eventLongitude: null, // ← selalu null
+          eventQuota: null, // ← selalu null
+          eventRegistrationLink: null, // ← selalu null
         );
       }
 
@@ -373,6 +361,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               const SizedBox(height: 16),
 
               // Event fields
+              // Event fields
               if (_postType == 'event') ...[
                 _fieldLabel('Informasi Event'),
                 Container(
@@ -517,63 +506,51 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       ),
                       const SizedBox(height: 10),
 
-                      // Lokasi
-                      _textField(
-                        controller: _eventLocationController,
-                        hint: 'Lokasi event',
-                        prefixIcon: Icons.location_on_outlined,
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Latitude & Longitude
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _textField(
-                              controller: _eventLatitudeController,
-                              hint: 'Latitude',
-                              prefixIcon: Icons.gps_fixed,
-                              keyboardType: TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
+                      // Lokasi (tanpa latitude/longitude)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 4), // padding untuk konsistensi
+                        child: TextFormField(
+                          controller: _eventLocationController,
+                          style: GoogleFonts.poppins(fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'Lokasi event (opsional)',
+                            hintStyle: GoogleFonts.poppins(
+                              fontSize: 13,
+                              color: Colors.grey.shade400,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.location_on_outlined,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade300),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade300),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                  color: AppColors.primary, width: 1.5),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _textField(
-                              controller: _eventLongitudeController,
-                              hint: 'Longitude',
-                              prefixIcon: Icons.gps_fixed,
-                              keyboardType: TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Kuota
-                      _textField(
-                        controller: _eventQuotaController,
-                        hint: 'Kuota peserta (kosongkan jika tidak terbatas)',
-                        prefixIcon: Icons.people_outline,
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Link Pendaftaran
-                      _textField(
-                        controller: _eventRegistrationLinkController,
-                        hint: 'Link pendaftaran eksternal (opsional)',
-                        prefixIcon: Icons.link_outlined,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
-
               // Upload File
               _fieldLabel('Media (Opsional)'),
               Container(
@@ -590,16 +567,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: 8,
-                              mainAxisSpacing: 8,
-                            ),
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
                         itemCount: _selectedFiles.length,
                         itemBuilder: (context, index) {
                           final file = _selectedFiles[index];
                           final isVideo =
                               file.path.toLowerCase().endsWith('.mp4') ||
-                              file.path.toLowerCase().endsWith('.webm');
+                                  file.path.toLowerCase().endsWith('.webm');
                           return Stack(
                             fit: StackFit.expand,
                             children: [
@@ -684,9 +661,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _selectedFiles.length >= 10
-                            ? null
-                            : _pickFiles,
+                        onPressed:
+                            _selectedFiles.length >= 10 ? null : _pickFiles,
                         icon: const Icon(Icons.add_photo_alternate_outlined),
                         label: Text(
                           _selectedFiles.isEmpty
@@ -757,16 +733,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _fieldLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text,
-      style: GoogleFonts.poppins(
-        fontSize: 12.5,
-        fontWeight: FontWeight.w600,
-        color: Colors.grey.shade700,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: GoogleFonts.poppins(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      );
 
   Widget _textField({
     required TextEditingController controller,

@@ -79,6 +79,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
       widget.communityName ??
       'Detail Komunitas';
 
+  int? get _totalScore => _community?['total_score'];
+
   // ============ LIFECYCLE ============
   @override
   void initState() {
@@ -317,7 +319,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
         _community = community;
         _isLoading = false;
       });
-      await _loadPosts(reset: true);
+
+      // Load posts dan score secara paralel
+      await Future.wait([
+        _loadPosts(reset: true),
+      ]);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -624,7 +630,6 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     final isVerified = community['is_verified'] == true;
     final memberCount = community['member_count'] ?? 0;
     final postCount = community['post_count'] ?? 0;
-    final eventCount = community['event_count'] ?? 0;
     final logoUrl = _resolveUrl(community['logo'] as String?);
     final bannerUrl = _resolveUrl(community['banner'] as String?);
     final category = community['categories'] as Map<String, dynamic>?;
@@ -702,11 +707,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                     ),
                     const SizedBox(height: 18),
 
-                    // STATS
+                    // STATS (dengan skor)
                     CommunityStatsWidget(
                       memberCount: memberCount,
                       postCount: postCount,
-                      eventCount: eventCount,
+                      totalScore: _totalScore,
                       onMembersTap: _isMember ? _openMembersList : null,
                     ),
                     const SizedBox(height: 20),

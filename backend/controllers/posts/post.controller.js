@@ -1,6 +1,27 @@
 import prisma from "../../lib/prisma.js";
 import fs from "fs";
 import path from "path";
+import { addCommunityScore } from "../score.controller.js";
+
+const getScoreByVisibility = (visibility, isCreation = true, postType = 'regular') => {
+    // Untuk post type event
+    if (postType === 'event') {
+        if (visibility === 'public') {
+            return isCreation ? 10 : -10;
+        } else {
+            // private event
+            return isCreation ? 2 : -2;
+        }
+    }
+    
+    // Untuk post type regular
+    if (visibility === 'public') {
+        return isCreation ? 2 : -2;
+    } else {
+        // private regular
+        return isCreation ? 1 : -1;
+    }
+};
 
 export const createPost = async (req, res) => {
     try {
@@ -91,6 +112,12 @@ export const createPost = async (req, res) => {
 
         // Tambahkan field event jika post_type = event
         if (post_type === 'event') {
+            if (event_date) {
+                postData.event_date = new Date(event_date);
+            } else {
+                postData.event_date = null;
+            }
+
             if (event_start_time && event_date) {
                 postData.event_start_time = new Date(`${event_date}T${event_start_time}`);
             } else {
@@ -138,6 +165,18 @@ export const createPost = async (req, res) => {
                 }
             }
         });
+
+        const eligibleForScore = await getPostScoreEligibility(parseInt(id), userId);
+        if (eligibleForScore) {
+            const score = getScoreByVisibility(visibility, true, post_type);
+            await addCommunityScore(prisma, {
+                communityId: parseInt(id),
+                score: score,
+                scoreType: 'post created',
+                description: `User_id: ${userId} created post with ${visibility} visibility`,
+                referenceId: post.post_id,
+            });
+        }
 
         const formattedPost = {
             ...post,
@@ -256,6 +295,13 @@ export const createPostWithMedia = async (req, res) => {
 
         // Tambahkan field event jika post_type = event
         if (post_type === 'event') {
+
+            if (event_date) {
+                postData.event_date = new Date(event_date);
+            } else {
+                postData.event_date = null;
+            }
+
             if (event_start_time && event_date) {
                 postData.event_start_time = new Date(`${event_date}T${event_start_time}`);
             } else {
@@ -280,6 +326,18 @@ export const createPostWithMedia = async (req, res) => {
         const post = await prisma.posts.create({
             data: postData
         });
+
+        const eligibleForScore = await getPostScoreEligibility(parseInt(id), userId);
+        if (eligibleForScore) {
+            const score = getScoreByVisibility(visibility, true, post_type);
+            await addCommunityScore(prisma, {
+                communityId: parseInt(id),
+                score: score,
+                scoreType: 'post created',
+                description: `User_id: ${userId} created post with ${visibility} visibility`,
+                referenceId: post.post_id,
+            });
+        }
 
         // Proses media jika ada
         let mediaData = [];
@@ -602,6 +660,17 @@ export const deletePost = async (req, res) => {
             }
         });
 
+        if (eligibleForScore) {
+            const score = getScoreByVisibility(post.visibility, false, post.post_type);
+            await addCommunityScore(prisma, {
+                communityId: post.community_id,
+                score: score,
+                scoreType: 'post deleted',
+                description: `User_id: ${userId} deleted post with ${post.visibility} visibility`,
+                referenceId: post.post_id,
+            });
+        }
+
         return res.json({
             success: true,
             message: "Postingan berhasil dihapus"
@@ -615,4 +684,23 @@ export const deletePost = async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
+};
+
+const getPostScoreEligibility = async (communityId, userId) => {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(
+        now.getTime() - 24 * 60 * 60 * 1000
+    );
+
+    const postCount = await prisma.posts.count({
+        where: {
+            community_id: communityId,
+            author_id: userId,
+            created_at: {
+                gte: twentyFourHoursAgo
+            }
+        }
+    });
+
+    return postCount < 3;
 };

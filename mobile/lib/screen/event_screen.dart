@@ -292,39 +292,6 @@ class _EventScreenState extends State<EventScreen> {
         color: Colors.white.withOpacity(0.18),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _statusFilter ?? 'all',
-          icon: const Icon(
-            Icons.arrow_drop_down,
-            color: Colors.white,
-          ),
-          dropdownColor: Colors.white,
-          style: GoogleFonts.poppins(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: Colors.black87,
-          ),
-          onChanged: (String? newValue) {
-            setState(() {
-              _statusFilter = newValue == 'all' ? null : newValue;
-            });
-            _loadEvents(reset: true);
-          },
-          items: _statusOptions.map<DropdownMenuItem<String>>((String value) {
-            return DropdownMenuItem<String>(
-              value: value,
-              child: Text(
-                value == 'all' ? 'Semua' : value,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
     );
   }
 
