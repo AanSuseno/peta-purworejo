@@ -8,6 +8,7 @@
     "build": "prisma generate",
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
   },
@@ -28,10 +29,10 @@
     "morgan": "^1.11.0",
     "multer": "^2.2.0",
     "pg": "^8.23.0",
+    "prisma": "^8.0.0-rc.12",
     "slugify": "^1.6.9"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14",
-    "prisma": "^7.9.1"
+    "nodemon": "^3.1.14"
   }
 }
