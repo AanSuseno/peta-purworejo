@@ -2,9 +2,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile/constants/colors.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/auth_provider.dart';
@@ -34,6 +37,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _postType = 'regular';
   String _visibility = 'public';
   bool _isSubmitting = false;
+  bool _isCompressing = false;
   final List<File> _selectedFiles = [];
 
   // Event fields
@@ -50,15 +54,92 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     super.dispose();
   }
 
+  // ============ IMAGE COMPRESSION ============
+  // image_picker's imageQuality itu persentase RELATIF dari kualitas asli,
+  // bukan target ukuran file. Jadi foto 4-8MB dari kamera, di 85% masih
+  // bisa 1-3MB. Fungsi ini kompres berulang (turunkan quality) sampai
+  // ukurannya di bawah maxSizeBytes, atau berhenti di quality minimum
+  // supaya hasilnya tidak terlalu pecah/blur.
+  Future<File> _compressImage(
+    File file, {
+    int maxSizeBytes = 100 * 1024, // 100 KB
+    int minQuality = 10,
+  }) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath =
+          '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_${p.basenameWithoutExtension(file.path)}.jpg';
+
+      int quality = 85;
+      File? result;
+
+      while (quality >= minQuality) {
+        final compressed = await FlutterImageCompress.compressAndGetFile(
+          file.absolute.path,
+          targetPath,
+          quality: quality,
+          minWidth: 1080,
+          minHeight: 1080,
+          format: CompressFormat.jpeg,
+        );
+
+        if (compressed == null) break;
+
+        final compressedFile = File(compressed.path);
+        final size = await compressedFile.length();
+
+        if (size <= maxSizeBytes) {
+          result = compressedFile;
+          break;
+        }
+
+        result = compressedFile; // simpan hasil terakhir sebagai fallback
+        quality -= 15;
+      }
+
+      return result ?? file;
+    } catch (e) {
+      debugPrint('Gagal kompres gambar: $e');
+      return file; // fallback ke file asli kalau proses compress error
+    }
+  }
+
+  bool _isVideoFile(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.mp4') || lower.endsWith('.webm');
+  }
+
   Future<void> _pickFiles() async {
     final picker = ImagePicker();
-    final files = await picker.pickMultiImage(imageQuality: 85);
+    final files = await picker.pickMultiImage(
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
 
-    if (files.isNotEmpty) {
-      setState(() {
-        _selectedFiles.addAll(files.map((f) => File(f.path)));
-      });
+    if (files.isEmpty) return;
+
+    setState(() => _isCompressing = true);
+
+    final compressedFiles = <File>[];
+    for (final f in files) {
+      final original = File(f.path);
+
+      if (_isVideoFile(f.path)) {
+        // video tidak dikompres di sini
+        compressedFiles.add(original);
+        continue;
+      }
+
+      final compressed = await _compressImage(original);
+      compressedFiles.add(compressed);
     }
+
+    if (!mounted) return;
+    setState(() {
+      _selectedFiles.addAll(compressedFiles);
+      _isCompressing = false;
+    });
   }
 
   void _removeFile(int index) {
@@ -361,7 +442,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               const SizedBox(height: 16),
 
               // Event fields
-              // Event fields
               if (_postType == 'event') ...[
                 _fieldLabel('Informasi Event'),
                 Container(
@@ -574,9 +654,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         itemCount: _selectedFiles.length,
                         itemBuilder: (context, index) {
                           final file = _selectedFiles[index];
-                          final isVideo =
-                              file.path.toLowerCase().endsWith('.mp4') ||
-                                  file.path.toLowerCase().endsWith('.webm');
+                          final isVideo = _isVideoFile(file.path);
                           return Stack(
                             fit: StackFit.expand,
                             children: [
@@ -642,7 +720,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           );
                         },
                       ),
-                    if (_selectedFiles.isEmpty) ...[
+                    if (_selectedFiles.isEmpty && !_isCompressing) ...[
                       Icon(
                         Icons.add_photo_alternate_outlined,
                         size: 40,
@@ -657,17 +735,45 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                       ),
                     ],
+                    if (_isCompressing) ...[
+                      const SizedBox(height: 8),
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Mengompres gambar...',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed:
-                            _selectedFiles.length >= 10 ? null : _pickFiles,
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                            (_isCompressing || _selectedFiles.length >= 10)
+                                ? null
+                                : _pickFiles,
+                        icon: _isCompressing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.add_photo_alternate_outlined),
                         label: Text(
-                          _selectedFiles.isEmpty
-                              ? 'Pilih Media'
-                              : 'Tambah Media Lagi',
+                          _isCompressing
+                              ? 'Mengompres...'
+                              : (_selectedFiles.isEmpty
+                                  ? 'Pilih Media'
+                                  : 'Tambah Media Lagi'),
                           style: GoogleFonts.poppins(),
                         ),
                         style: OutlinedButton.styleFrom(

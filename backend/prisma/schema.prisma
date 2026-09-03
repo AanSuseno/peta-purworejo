@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url       = env("DATABASE_URL")
 }
 
 model categories {
@@ -116,31 +117,33 @@ model community_members {
 }
 
 model donation_campaigns {
-  campaign_id                                 Int                  @id @default(autoincrement())
+  campaign_id                                 Int                      @id @default(autoincrement())
   community_id                                Int?
   creator_id                                  Int
-  title                                       String               @db.VarChar(200)
+  title                                       String                   @db.VarChar(200)
   description                                 String?
   donation_type                               donation_type_enum
-  target_amount                               Decimal?             @db.Decimal(15, 2)
-  collected_amount                            Decimal              @default(0) @db.Decimal(15, 2)
+  target_amount                               Decimal?                 @db.Decimal(15, 2)
+  collected_amount                            Decimal                  @default(0) @db.Decimal(15, 2)
   payment_info                                String?
   goods_description                           String?
   volunteer_needs                             String?
   volunteer_slots                             Int?
-  start_date                                  DateTime?            @db.Date
-  end_date                                    DateTime?            @db.Date
-  status                                      campaign_status_enum @default(active)
-  total_donors                                Int                  @default(0)
+  start_date                                  DateTime?                @db.Date
+  end_date                                    DateTime?                @db.Date
+  status                                      campaign_status_enum     @default(active)
+  total_donors                                Int                      @default(0)
   approved_by                                 Int?
-  approved_at                                 DateTime?            @db.Timestamp(6)
+  approved_at                                 DateTime?                @db.Timestamp(6)
   rejection_reason                            String?
-  created_at                                  DateTime             @default(now()) @db.Timestamp(6)
-  updated_at                                  DateTime             @default(now()) @db.Timestamp(6)
-  approval_status                             String?              @default("pending") @db.VarChar(20)
-  users_donation_campaigns_approved_byTousers users?               @relation("donation_campaigns_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  communities                                 communities?         @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
-  users                                       users                @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  created_at                                  DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at                                  DateTime                 @default(now()) @db.Timestamp(6)
+  approval_status                             String?                  @default("pending") @db.VarChar(20)
+  total_distributed                           Decimal?                 @default(0) @db.Decimal(15, 2)
+  users_donation_campaigns_approved_byTousers users?                   @relation("donation_campaigns_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  communities                                 communities?             @relation(fields: [community_id], references: [community_id], onDelete: Cascade, onUpdate: NoAction)
+  users                                       users                    @relation(fields: [creator_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  donation_distributions                      donation_distributions[]
   donations                                   donations[]
 
   @@index([community_id], map: "idx_donation_campaigns_community_id")
@@ -426,6 +429,36 @@ model community_scores {
   @@index([community_id], map: "idx_community_scores_community_id")
   @@index([created_at], map: "idx_community_scores_created_at")
   @@index([score_type], map: "idx_community_scores_score_type")
+}
+
+model distribution_evidences {
+  evidence_id            Int                    @id @default(autoincrement())
+  distribution_id        Int
+  evidence_url           String                 @db.VarChar(255)
+  caption                String?                @db.VarChar(200)
+  uploaded_at            DateTime               @default(now()) @db.Timestamp(6)
+  donation_distributions donation_distributions @relation(fields: [distribution_id], references: [distribution_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_evidence_distribution")
+
+  @@index([distribution_id], map: "idx_evidences_distribution_id")
+}
+
+model donation_distributions {
+  distribution_id        Int                      @id @default(autoincrement())
+  campaign_id            Int
+  recipient_name         String                   @db.VarChar(100)
+  recipient_phone        String?                  @db.VarChar(20)
+  recipient_address      String?
+  amount                 Decimal                  @default(0) @db.Decimal(15, 2)
+  description            String?
+  status                 String                   @default("pending") @db.VarChar(20)
+  distributed_at         DateTime?                @db.Timestamp(6)
+  created_at             DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamp(6)
+  distribution_evidences distribution_evidences[]
+  donation_campaigns     donation_campaigns       @relation(fields: [campaign_id], references: [campaign_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_distribution_campaign")
+
+  @@index([campaign_id], map: "idx_distributions_campaign_id")
+  @@index([status], map: "idx_distributions_status")
 }
 
 enum admin_role_enum {

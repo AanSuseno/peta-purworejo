@@ -192,36 +192,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+      final result = await _attemptGoogleLogin();
 
-      if (account == null) {
-        throw Exception('Login dibatalkan');
-      }
-
-      _userAccount = account;
-
-      // Ambil ID token dari Google -- INI yang dikirim ke server,
-      // bukan email/name/photo mentah. Server yang akan memverifikasi
-      // token ini langsung ke Google.
-      final GoogleSignInAuthentication googleAuth =
-          await account.authentication;
-      final idToken = googleAuth.idToken;
-
-      if (idToken == null) {
-        throw Exception('Gagal mendapatkan ID token dari Google');
-      }
-
-      final result = await _authService.loginWithGoogle(idToken);
-
-      // Simpan JWT dari server dengan aman
       await _storage.saveToken(result['token'] as String);
-
       _userData = result['user'] as Map<String, dynamic>;
       await _storage.saveUserData(_userData!);
       _isLoggedIn = true;
 
       debugPrint('Profile from login: $_userData');
-
       notifyListeners();
     } catch (e) {
       debugPrint('Login error: $e');
@@ -235,6 +213,38 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+// 🔥 baru — pisahkan proses ambil idToken + tukar ke backend, dengan
+// SATU kali retry otomatis kalau idToken null di percobaan pertama
+// (known quirk google_sign_in di Android).
+  Future<Map<String, dynamic>> _attemptGoogleLogin() async {
+    final GoogleSignInAccount? account = await _googleSignIn.signIn();
+    if (account == null) {
+      throw Exception('Login dibatalkan');
+    }
+    _userAccount = account;
+
+    String? idToken = (await account.authentication).idToken;
+
+    if (idToken == null) {
+      debugPrint('idToken null di percobaan pertama, retry sekali...');
+      // Sign out dulu supaya signIn() berikutnya benar-benar fresh,
+      // bukan mengembalikan account cache yang sama tanpa token.
+      await _googleSignIn.signOut();
+      final retryAccount = await _googleSignIn.signIn();
+      if (retryAccount == null) {
+        throw Exception('Login dibatalkan');
+      }
+      _userAccount = retryAccount;
+      idToken = (await retryAccount.authentication).idToken;
+    }
+
+    if (idToken == null) {
+      throw Exception('Gagal mendapatkan ID token dari Google, coba lagi');
+    }
+
+    return _authService.loginWithGoogle(idToken);
   }
 
   Future<void> logout() async {

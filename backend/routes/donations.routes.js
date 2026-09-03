@@ -41,13 +41,22 @@ import {
     getPendingCampaigns,
     approveCampaign,
     rejectCampaign,
+
+    createDistribution,
+    addDistributionEvidence,
+    getDistributionsByCampaign,
+    getDistributionById,
+    updateDistributionStatus,
+    deleteDistribution,
+    completeCampaign 
 } from "../controllers/donations/index.js";
 import {
     authenticate
 } from "../middlewares/auth.middleware.js";
 import {
     uploadDonationProof,
-    uploadDonationGoodsPhoto
+    uploadDonationGoodsPhoto,
+    uploadDistributionEvidence
 } from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
@@ -158,6 +167,9 @@ router.put("/donations/:id/approve", authenticate, approveCommunityDonation);
 // REJECT Community Donation (community admin)
 router.put("/donations/:id/reject", authenticate, rejectCommunityDonation);
 
+
+router.put("/campaigns/:id/complete", authenticate, completeCampaign);
+
 // ============================================
 // 🧑‍🤝‍🧑 VOLUNTEER MANAGEMENT
 // ============================================
@@ -187,5 +199,32 @@ router.put("/campaigns/:id/approve", authenticate, approveCampaign);
 
 // REJECT Campaign
 router.put("/campaigns/:id/reject", authenticate, rejectCampaign);
+
+router.post(
+    "/campaigns/:id/distributions",
+    authenticate,
+    uploadDistributionEvidence,
+    createDistribution
+);
+
+// GET Distributions by Campaign
+router.get("/campaigns/:id/distributions", authenticate, getDistributionsByCampaign);
+
+// GET Distribution by ID
+router.get("/distributions/:id", authenticate, getDistributionById);
+
+// ADD Evidence to existing Distribution
+router.post(
+    "/distributions/:id/evidence",
+    authenticate,
+    uploadDistributionEvidence,
+    addDistributionEvidence
+);
+
+// UPDATE Distribution (status, data, dll)
+router.put("/distributions/:id", authenticate, updateDistributionStatus);
+
+// DELETE Distribution
+router.delete("/distributions/:id", authenticate, deleteDistribution);
 
 export default router;

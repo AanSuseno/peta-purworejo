@@ -102,6 +102,7 @@ class PostsService {
   }
 
   /// GET /posts/communities/:id/posts
+  /// GET /posts/communities/:id/posts
   Future<PostPage> fetchCommunityPosts({
     required String token,
     required int communityId,
@@ -110,6 +111,7 @@ class PostsService {
     String? postType,
     String sortBy = 'created_at',
     String sortOrder = 'desc',
+    int? categoryId, // 🔥 tambahan
   }) async {
     const tag = 'fetchCommunityPosts';
     _debugLog(tag, 'Fetching posts for communityId: $communityId, page: $page');
@@ -120,6 +122,7 @@ class PostsService {
       'sort_by': sortBy,
       'sort_order': sortOrder,
       if (postType != null && postType.isNotEmpty) 'post_type': postType,
+      if (categoryId != null) 'category_id': '$categoryId', // 🔥 tambahan
     };
 
     final uri = Uri.parse('$baseUrl/posts/communities/$communityId/posts')
@@ -138,7 +141,6 @@ class PostsService {
 
       _debugResponse(tag, response);
 
-      // Handle HTML response
       final data = _parseResponse(tag, response);
 
       if (response.statusCode == 200) {
@@ -193,6 +195,8 @@ class PostsService {
     int page = 1,
     int limit = 10,
     String? postType,
+    String? search,
+    int? categoryId, // 🔥 tambahan
   }) async {
     const tag = 'fetchFeedPosts';
     _debugLog(tag, 'Fetching feed posts, page: $page');
@@ -201,6 +205,8 @@ class PostsService {
       'page': '$page',
       'limit': '$limit',
       if (postType != null && postType.isNotEmpty) 'post_type': postType,
+      if (search != null && search.isNotEmpty) 'search': search,
+      if (categoryId != null) 'category_id': '$categoryId', // 🔥 tambahan
     };
 
     final uri = Uri.parse('$baseUrl/posts/posts/feed')

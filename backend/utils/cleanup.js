@@ -1,302 +1,178 @@
 // utils/cleanup.js
 import fs from "fs";
 import path from "path";
-import { promisify } from "util";
+import { fileURLToPath } from "url";
 import prisma from "../lib/prisma.js";
 
-const readdir = promisify(fs.readdir);
-const stat = promisify(fs.stat);
-const unlink = promisify(fs.unlink);
-const rmdir = promisify(fs.rmdir);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadDir = path.join(__dirname, "..", "uploads");
 
-/**
- * Ambil semua file dari database
- */
-async function getFilesFromDatabase() {
-    const filePaths = new Set();
-
-    // 1. Profile pictures dari users
-    const users = await prisma.users.findMany({
+// Konfigurasi tiap folder upload: lokasi di disk + cara ambil file yang
+// masih dipakai dari database, sesuai skema Prisma.
+const FOLDER_CONFIG = {
+  profiles: {
+    dir: path.join(uploadDir, "profiles"),
+    getUsedFiles: async () => {
+      const rows = await prisma.users.findMany({
+        where: { profile_picture: { not: null } },
         select: { profile_picture: true },
-        where: { profile_picture: { not: null } }
-    });
-    users.forEach(u => {
-        if (u.profile_picture) {
-            // Simpan dalam berbagai format untuk perbandingan
-            const normalized = normalizePath(u.profile_picture);
-            filePaths.add(normalized);
-            filePaths.add(path.basename(normalized));
-            // Tambahkan dengan prefix uploads/
-            if (!normalized.startsWith('uploads/')) {
-                filePaths.add(`uploads/${normalized}`);
-            }
-        }
-    });
-
-    // 2. Logo dari communities
-    const communities = await prisma.communities.findMany({
+      });
+      return rows.map((r) => r.profile_picture);
+    },
+  },
+  communities: {
+    dir: path.join(uploadDir, "communities"),
+    getUsedFiles: async () => {
+      const rows = await prisma.communities.findMany({
+        where: { OR: [{ logo: { not: null } }, { banner: { not: null } }] },
         select: { logo: true, banner: true },
-        where: { OR: [{ logo: { not: null } }, { banner: { not: null } }] }
-    });
-    communities.forEach(c => {
-        if (c.logo) {
-            const normalized = normalizePath(c.logo);
-            filePaths.add(normalized);
-            filePaths.add(path.basename(normalized));
-            if (!normalized.startsWith('uploads/')) {
-                filePaths.add(`uploads/${normalized}`);
-            }
-        }
-        if (c.banner) {
-            const normalized = normalizePath(c.banner);
-            filePaths.add(normalized);
-            filePaths.add(path.basename(normalized));
-            if (!normalized.startsWith('uploads/')) {
-                filePaths.add(`uploads/${normalized}`);
-            }
-        }
-    });
+      });
+      const files = [];
+      rows.forEach((r) => {
+        if (r.logo) files.push(r.logo);
+        if (r.banner) files.push(r.banner);
+      });
+      return files;
+    },
+  },
+  donations: {
+    dir: path.join(uploadDir, "donations"),
+    getUsedFiles: async () => {
+      const rows = await prisma.donations.findMany({
+        where: { proof_image: { not: null } },
+        select: { proof_image: true },
+      });
+      return rows.map((r) => r.proof_image);
+    },
+  },
+  distributions: {
+    dir: path.join(uploadDir, "distributions"),
+    getUsedFiles: async () => {
+      const rows = await prisma.distribution_evidences.findMany({
+        select: { evidence_url: true },
+      });
+      return rows.map((r) => r.evidence_url);
+    },
+  },
+};
 
-    // 3. Post media
-    const postMedia = await prisma.post_media.findMany({
-        select: { media_url: true }
-    });
-    postMedia.forEach(pm => {
-        if (pm.media_url) {
-            const normalized = normalizePath(pm.media_url);
-            filePaths.add(normalized);
-            filePaths.add(path.basename(normalized));
-            if (!normalized.startsWith('uploads/')) {
-                filePaths.add(`uploads/${normalized}`);
-            }
-        }
-    });
-
-    // 4. Donation proof images
-    const donations = await prisma.donations.findMany({
-        select: { proof_image: true, goods_photo: true },
-        where: { OR: [{ proof_image: { not: null } }, { goods_photo: { not: null } }] }
-    });
-    donations.forEach(d => {
-        if (d.proof_image) {
-            const normalized = normalizePath(d.proof_image);
-            filePaths.add(normalized);
-            filePaths.add(path.basename(normalized));
-            if (!normalized.startsWith('uploads/')) {
-                filePaths.add(`uploads/${normalized}`);
-            }
-        }
-        if (d.goods_photo) {
-            const normalized = normalizePath(d.goods_photo);
-            filePaths.add(normalized);
-            filePaths.add(path.basename(normalized));
-            if (!normalized.startsWith('uploads/')) {
-                filePaths.add(`uploads/${normalized}`);
-            }
-        }
-    });
-
-    console.log(`📁 Found ${filePaths.size} unique file references in database`);
-    console.log("📋 Sample DB files:", Array.from(filePaths).slice(0, 5));
-    
-    return filePaths;
+// Nilai di DB bisa berupa "namafile.jpg", "/uploads/profiles/namafile.jpg",
+// atau URL lengkap. Kita ambil basename-nya saja agar bisa dicocokkan
+// dengan nama file fisik di disk.
+function extractFilename(value) {
+  if (!value) return null;
+  const clean = String(value).split("?")[0];
+  return path.basename(clean);
 }
 
-function normalizePath(filePath) {
-    if (!filePath) return '';
-    // Remove leading slash
-    let normalized = filePath.replace(/^\/+/, '');
-    // Remove query parameters
-    if (normalized.includes('?')) {
-        normalized = normalized.split('?')[0];
-    }
-    return normalized;
-}
-
-/**
- * Scan dan hapus file yang tidak terpakai
- */
-async function scanAndDelete(dirPath, dbFiles, relativePath = '') {
-    const result = {
-        deletedFiles: 0,
-        deletedFolders: 0,
-        errors: [],
-        deletedItems: []
-    };
-
+function getFilesInDir(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => {
     try {
-        const files = await readdir(dirPath);
-
-        for (const file of files) {
-            const fullPath = path.join(dirPath, file);
-            const relativeFilePath = path.join(relativePath, file);
-            const fileStat = await stat(fullPath);
-
-            if (fileStat.isDirectory()) {
-                // Skip folder uploads/profiles dan uploads/communities jika tidak kosong
-                if (relativeFilePath === 'profiles' || relativeFilePath === 'communities') {
-                    // Jangan hapus folder utama
-                    const subResult = await scanAndDelete(fullPath, dbFiles, relativeFilePath);
-                    result.deletedFiles += subResult.deletedFiles;
-                    result.deletedFolders += subResult.deletedFolders;
-                    result.errors.push(...subResult.errors);
-                    result.deletedItems.push(...subResult.deletedItems);
-                    continue;
-                }
-
-                const subResult = await scanAndDelete(fullPath, dbFiles, relativeFilePath);
-                result.deletedFiles += subResult.deletedFiles;
-                result.deletedFolders += subResult.deletedFolders;
-                result.errors.push(...subResult.errors);
-                result.deletedItems.push(...subResult.deletedItems);
-
-                // Hapus folder kosong (tapi jangan hapus folder utama)
-                const remainingFiles = await readdir(fullPath);
-                if (remainingFiles.length === 0 && 
-                    relativeFilePath !== 'profiles' && 
-                    relativeFilePath !== 'communities') {
-                    await rmdir(fullPath);
-                    result.deletedFolders++;
-                    result.deletedItems.push({
-                        path: relativeFilePath,
-                        type: 'folder',
-                        reason: 'Empty folder'
-                    });
-                    console.log(`🗑️ Deleted empty folder: ${relativeFilePath}`);
-                }
-            } else {
-                // Cek apakah file terdaftar di database
-                const isInDb = checkIfFileInDb(relativeFilePath, file, dbFiles);
-                
-                if (!isInDb) {
-                    try {
-                        await unlink(fullPath);
-                        result.deletedFiles++;
-                        result.deletedItems.push({
-                            path: relativeFilePath,
-                            type: 'file',
-                            reason: 'Not in database'
-                        });
-                        console.log(`🗑️ Deleted: ${relativeFilePath}`);
-                    } catch (err) {
-                        const errorMsg = `Failed to delete ${relativeFilePath}: ${err.message}`;
-                        result.errors.push(errorMsg);
-                        console.error(`❌ ${errorMsg}`);
-                    }
-                } else {
-                    console.log(`✅ Kept: ${relativeFilePath} (in database)`);
-                }
-            }
-        }
-    } catch (error) {
-        result.errors.push(`Error scanning ${dirPath}: ${error.message}`);
+      return fs.statSync(path.join(dir, f)).isFile();
+    } catch {
+      return false;
     }
-
-    return result;
+  });
 }
 
-/**
- * Cek apakah file terdaftar di database dengan berbagai format
- */
-function checkIfFileInDb(relativeFilePath, fileName, dbFiles) {
-    // Format yang mungkin disimpan di database
-    const formats = [
-        relativeFilePath,                          // "profiles/image.jpg"
-        `uploads/${relativeFilePath}`,             // "uploads/profiles/image.jpg"
-        `/${relativeFilePath}`,                    // "/profiles/image.jpg"
-        `uploads/${relativeFilePath}`,             // "uploads/profiles/image.jpg"
-        relativeFilePath.replace(/^uploads\//, ''), // Tanpa prefix uploads/
-        fileName,                                   // "image.jpg"
-        `profiles/${fileName}`,                    // "profiles/image.jpg"
-        `communities/${fileName}`,                 // "communities/image.jpg"
-        `uploads/profiles/${fileName}`,            // "uploads/profiles/image.jpg"
-        `uploads/communities/${fileName}`,         // "uploads/communities/image.jpg"
-    ];
-
-    for (const format of formats) {
-        if (dbFiles.has(format)) {
-            return true;
-        }
-    }
-
-    return false;
+function formatBytes(bytes) {
+  if (!bytes) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
-/**
- * Main function untuk cleanup
- */
-export async function cleanupUnusedFiles() {
-    const uploadDir = path.join(process.cwd(), "uploads");
-    
-    if (!fs.existsSync(uploadDir)) {
-        return { success: false, message: "Uploads folder not found" };
-    }
-
-    console.log("📊 Fetching files from database...");
-    const dbFiles = await getFilesFromDatabase();
-    console.log(`📁 Found ${dbFiles.size} files in database`);
-
-    console.log("🔍 Scanning uploads folder...");
-    const result = await scanAndDelete(uploadDir, dbFiles, '');
-
-    return {
-        success: true,
-        message: "Cleanup completed",
-        deletedFiles: result.deletedFiles,
-        deletedFolders: result.deletedFolders,
-        deletedItems: result.deletedItems,
-        errors: result.errors
-    };
-}
-
-/**
- * Statistik file (tanpa delete)
- */
 export async function getFileStats() {
-    const uploadDir = path.join(process.cwd(), "uploads");
-    
-    if (!fs.existsSync(uploadDir)) {
-        return { success: false, message: "Uploads folder not found" };
-    }
+  const folders = {};
+  let totalFiles = 0;
+  let totalSize = 0;
+  let totalUnused = 0;
 
-    const dbFiles = await getFilesFromDatabase();
-    let totalFiles = 0;
-    let inDatabase = 0;
-    let notInDatabase = 0;
-    const details = [];
+  for (const [name, config] of Object.entries(FOLDER_CONFIG)) {
+    const filesOnDisk = getFilesInDir(config.dir);
+    const usedValues = await config.getUsedFiles();
+    const usedFilenames = new Set(usedValues.map(extractFilename).filter(Boolean));
 
-    async function countFiles(dirPath, relativePath = '') {
-        const files = await readdir(dirPath);
-        for (const file of files) {
-            const fullPath = path.join(dirPath, file);
-            const relativeFilePath = path.join(relativePath, file);
-            const fileStat = await stat(fullPath);
-            
-            if (fileStat.isDirectory()) {
-                await countFiles(fullPath, relativeFilePath);
-            } else {
-                totalFiles++;
-                const isInDb = checkIfFileInDb(relativeFilePath, file, dbFiles);
-                if (isInDb) {
-                    inDatabase++;
-                } else {
-                    notInDatabase++;
-                    details.push({
-                        path: relativeFilePath,
-                        reason: 'Not in database'
-                    });
-                }
-            }
-        }
-    }
+    let folderSize = 0;
+    const unusedFiles = [];
 
-    await countFiles(uploadDir, '');
+    filesOnDisk.forEach((file) => {
+      const size = fs.statSync(path.join(config.dir, file)).size;
+      folderSize += size;
+      if (!usedFilenames.has(file)) unusedFiles.push(file);
+    });
 
-    return {
-        success: true,
-        totalFiles,
-        inDatabase,
-        notInDatabase,
-        details: details.slice(0, 20) // Batasi 20 file pertama
+    folders[name] = {
+      total_files: filesOnDisk.length,
+      total_size: formatBytes(folderSize),
+      used_files: filesOnDisk.length - unusedFiles.length,
+      unused_files: unusedFiles.length,
+      unused_file_names: unusedFiles,
     };
+
+    totalFiles += filesOnDisk.length;
+    totalSize += folderSize;
+    totalUnused += unusedFiles.length;
+  }
+
+  return {
+    success: true,
+    summary: {
+      total_files: totalFiles,
+      total_size: formatBytes(totalSize),
+      total_unused_files: totalUnused,
+    },
+    folders,
+  };
+}
+
+export async function cleanupUnusedFiles() {
+  const details = {};
+  const errors = [];
+  let totalDeleted = 0;
+  let totalFreedBytes = 0;
+
+  for (const [name, config] of Object.entries(FOLDER_CONFIG)) {
+    const filesOnDisk = getFilesInDir(config.dir);
+    const usedValues = await config.getUsedFiles();
+    const usedFilenames = new Set(usedValues.map(extractFilename).filter(Boolean));
+
+    const deleted = [];
+    let freedBytes = 0;
+
+    for (const file of filesOnDisk) {
+      if (usedFilenames.has(file)) continue;
+      const filePath = path.join(config.dir, file);
+      try {
+        const size = fs.statSync(filePath).size;
+        fs.unlinkSync(filePath);
+        deleted.push(file);
+        freedBytes += size;
+      } catch (err) {
+        errors.push({ folder: name, file, error: err.message });
+      }
+    }
+
+    details[name] = {
+      deleted_count: deleted.length,
+      deleted_files: deleted,
+      freed_space: formatBytes(freedBytes),
+    };
+
+    totalDeleted += deleted.length;
+    totalFreedBytes += freedBytes;
+  }
+
+  return {
+    success: true,
+    summary: {
+      total_deleted: totalDeleted,
+      total_freed_space: formatBytes(totalFreedBytes),
+    },
+    details,
+    ...(errors.length ? { errors } : {}),
+  };
 }

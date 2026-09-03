@@ -32,7 +32,8 @@ const uploadDirs = [
     uploadDir,
     path.join(uploadDir, "profiles"),
     path.join(uploadDir, "communities"),
-    path.join(uploadDir, "donations")
+    path.join(uploadDir, "donations"),
+    path.join(uploadDir, "distributions")
 ];
 
 uploadDirs.forEach(dir => {

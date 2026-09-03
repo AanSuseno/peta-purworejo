@@ -37,16 +37,17 @@ class CommunitiesService {
   /// GET /communities?page=&limit=&search=
   /// Query 'search' dipakai baik untuk pencarian nama maupun deskripsi
   /// komunitas (langsung ditangani backend lewat parameter yang sama).
-  Future<CommunityPage> fetchCommunities({
-    required String token,
-    int page = 1,
-    int limit = 10,
-    String? search,
-  }) async {
+  Future<CommunityPage> fetchCommunities(
+      {required String token,
+      int page = 1,
+      int limit = 10,
+      String? search,
+      int? categoryId}) async {
     final queryParams = <String, String>{
       'page': '$page',
       'limit': '$limit',
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (categoryId != null) 'category_id': '$categoryId'
     };
 
     final uri =

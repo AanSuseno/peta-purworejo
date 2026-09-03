@@ -25,7 +25,14 @@ import '../widgets/swipe_join_button.dart';
 ///
 ///   Future<String?> getToken() => _storage.readToken();
 class CommunityScreen extends StatefulWidget {
-  const CommunityScreen({super.key});
+  final int? initialCategoryId;
+  final String? initialCategoryName;
+
+  const CommunityScreen({
+    super.key,
+    this.initialCategoryId,
+    this.initialCategoryName,
+  });
 
   @override
   State<CommunityScreen> createState() => _CommunityScreenState();
@@ -46,10 +53,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
   int _page = 1;
   int _totalPages = 1;
   String _query = '';
+  int? _categoryId;
+  String? _categoryName;
 
   @override
   void initState() {
     super.initState();
+    _categoryId = widget.initialCategoryId;
+    _categoryName = widget.initialCategoryName;
     _loadCommunities(reset: true);
     _scrollController.addListener(_onScroll);
   }
@@ -108,6 +119,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
         token: token,
         page: nextPage,
         search: _query,
+        categoryId: _categoryId,
       );
 
       if (!mounted) return;
@@ -136,6 +148,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
         );
       }
     }
+  }
+
+  void _clearCategoryFilter() {
+    setState(() {
+      _categoryId = null;
+      _categoryName = null;
+    });
+    _loadCommunities(reset: true);
   }
 
   Future<void> _handleJoin(int communityId) async {
@@ -379,8 +399,48 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 contentPadding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-          ),
-        ],
+          ), // 👈 Container search berakhir di sini (kurung tutup + koma ini sudah ada di kode asli)
+
+          // 🔥 TAMBAHKAN BLOK CHIP INI DI SINI, SETELAH Container SEARCH
+          if (_categoryId != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.filter_alt_rounded,
+                        size: 14, color: Colors.white),
+                    const SizedBox(width: 6),
+                    Text(
+                      _categoryName ?? 'Kategori terpilih',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: _clearCategoryFilter,
+                      child: const Icon(Icons.close_rounded,
+                          size: 14, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          // 🔥 BLOK CHIP SELESAI DI SINI
+        ], // 👈 ini penutup children dari Column
       ),
     );
   }

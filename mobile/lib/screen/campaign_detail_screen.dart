@@ -1,4 +1,5 @@
 // lib/screens/campaign_detail_screen.dart
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,10 @@ import 'package:shimmer/shimmer.dart';
 import '../provider/auth_provider.dart';
 import '../services/donation_service.dart';
 import 'edit_campaign_screen.dart';
+
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 class CampaignDetailScreen extends StatefulWidget {
   final int campaignId;
@@ -59,6 +64,21 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
   Map<String, dynamic>? _campaign;
   Map<String, dynamic>? _summary;
   List<Map<String, dynamic>> _donations = [];
+  List<Map<String, dynamic>> _distributions = [];
+  bool _isLoadingDistributions = false;
+  bool _isSubmittingDistribution = false;
+
+  final TextEditingController _recipientNameController =
+      TextEditingController();
+  final TextEditingController _recipientPhoneController =
+      TextEditingController();
+  final TextEditingController _recipientAddressController =
+      TextEditingController();
+  final TextEditingController _distributionAmountController =
+      TextEditingController();
+  final TextEditingController _distributionDescriptionController =
+      TextEditingController();
+  List<File> _evidenceImages = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
   bool _isDonating = false;
@@ -102,6 +122,11 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     _donorEmailController.dispose();
     _deliveryNotesController.dispose();
     _amountController.dispose();
+    _recipientNameController.dispose();
+    _recipientPhoneController.dispose();
+    _recipientAddressController.dispose();
+    _distributionAmountController.dispose();
+    _distributionDescriptionController.dispose();
     super.dispose();
   }
 
@@ -161,12 +186,110 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
             [];
         _isLoading = false;
       });
+      unawaited(_loadDistributions());
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         _error = e.toString().replaceFirst('Exception: ', '');
       });
+    }
+  }
+
+  Future<File> _compressImage(
+    File file, {
+    int maxSizeBytes = 100 * 1024, // 100 KB
+    int minQuality = 10,
+  }) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath =
+          '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_${p.basenameWithoutExtension(file.path)}.jpg';
+
+      int quality = 85;
+      File? result;
+
+      while (quality >= minQuality) {
+        final compressed = await FlutterImageCompress.compressAndGetFile(
+          file.absolute.path,
+          targetPath,
+          quality: quality,
+          minWidth: 1080,
+          minHeight: 1080,
+          format: CompressFormat.jpeg,
+        );
+
+        if (compressed == null) break;
+
+        final compressedFile = File(compressed.path);
+        final size = await compressedFile.length();
+
+        if (size <= maxSizeBytes) {
+          result = compressedFile;
+          break;
+        }
+
+        result = compressedFile; // fallback ke hasil terakhir
+        quality -= 15;
+      }
+
+      return result ?? file;
+    } catch (e) {
+      debugPrint('Gagal kompres gambar: $e');
+      return file;
+    }
+  }
+
+  Future<void> _loadDistributions() async {
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) return;
+
+    setState(() => _isLoadingDistributions = true);
+
+    try {
+      final result = await _service.getCampaignDistributions(
+        token: token,
+        campaignId: widget.campaignId,
+        limit: 20,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _distributions = (result['data'] as List?)
+                ?.whereType<Map>()
+                .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+                .toList() ??
+            [];
+        _isLoadingDistributions = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingDistributions = false);
+    }
+  }
+
+  String _getDistributionStatusLabel(String? status) {
+    switch (status) {
+      case 'distributed':
+        return 'Terdistribusi';
+      case 'cancelled':
+        return 'Dibatalkan';
+      case 'pending':
+      default:
+        return 'Menunggu';
+    }
+  }
+
+  Color _getDistributionStatusColor(String? status) {
+    switch (status) {
+      case 'distributed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      case 'pending':
+      default:
+        return Colors.orange;
     }
   }
 
@@ -177,6 +300,16 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
       decimalDigits: 0,
     );
     return formatter.format(amount);
+  }
+
+  String _resolveImageUrl(String path) {
+    if (path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+
+    // 🔥 Asumsi: DonationService.baseUrl diakhiri '/api', file evidence
+    // diserve dari root server yang sama. Sesuaikan kalau beda di project-mu.
+    final root = DonationService.baseUrl.replaceAll(RegExp(r'/api/?$'), '');
+    return '$root$path';
   }
 
   String _getStatusLabel(String? status) {
@@ -246,21 +379,57 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: source, imageQuality: 85);
     if (picked != null) {
-      final file = File(picked.path);
+      // 🔥 kompres dulu sebelum disimpan ke state
+      final compressed = await _compressImage(File(picked.path));
 
-      // Update state utama (dipakai saat submit / dipertahankan
-      // walau sheet ditutup-buka lagi).
       setState(() {
         if (isGoods) {
-          _goodsPhoto = file;
+          _goodsPhoto = compressed; // pakai hasil compress, bukan file asli
         } else {
-          _proofImage = file;
+          _proofImage = compressed;
         }
       });
 
-      // 🔥 Trigger rebuild khusus untuk konten bottom sheet.
       setModalState?.call(() {});
     }
+  }
+
+  Future<void> _pickEvidenceImages({StateSetter? setModalState}) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickMultiImage(imageQuality: 85);
+    if (picked.isEmpty) return;
+
+    final compressedFiles = <File>[];
+    for (final x in picked) {
+      compressedFiles.add(await _compressImage(File(x.path)));
+    }
+
+    setState(() {
+      _evidenceImages.addAll(compressedFiles);
+    });
+    setModalState?.call(() {});
+  }
+
+  Future<void> _pickEvidenceImageFromCamera(
+      {StateSetter? setModalState}) async {
+    final picker = ImagePicker();
+    final picked =
+        await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+    if (picked == null) return;
+
+    final compressed = await _compressImage(File(picked.path));
+
+    setState(() {
+      _evidenceImages.add(compressed);
+    });
+    setModalState?.call(() {});
+  }
+
+  void _removeEvidenceImage(int index, {StateSetter? setModalState}) {
+    setState(() {
+      _evidenceImages.removeAt(index);
+    });
+    setModalState?.call(() {});
   }
 
   Future<void> _submitDonation({StateSetter? setModalState}) async {
@@ -481,6 +650,277 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     }
   }
 
+  Future<void> _submitDistribution({StateSetter? setModalState}) async {
+    if (_recipientNameController.text.trim().isEmpty) {
+      _showError('Nama penerima wajib diisi');
+      return;
+    }
+
+    final amount = double.tryParse(
+      _distributionAmountController.text
+          .replaceAll('Rp', '')
+          .replaceAll('.', '')
+          .replaceAll(',', '.')
+          .trim(),
+    );
+
+    if (amount == null || amount <= 0) {
+      _showError('Jumlah distribusi harus lebih dari 0');
+      return;
+    }
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      _showError('Sesi tidak ditemukan, silakan login ulang');
+      return;
+    }
+
+    setState(() => _isSubmittingDistribution = true);
+    setModalState?.call(() {});
+
+    try {
+      await _service.createDistribution(
+        token: token,
+        campaignId: widget.campaignId,
+        recipientName: _recipientNameController.text.trim(),
+        amount: amount,
+        recipientPhone: _recipientPhoneController.text.trim().isEmpty
+            ? null
+            : _recipientPhoneController.text.trim(),
+        recipientAddress: _recipientAddressController.text.trim().isEmpty
+            ? null
+            : _recipientAddressController.text.trim(),
+        description: _distributionDescriptionController.text.trim().isEmpty
+            ? null
+            : _distributionDescriptionController.text.trim(),
+        evidenceImages: _evidenceImages.isEmpty ? null : _evidenceImages,
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Distribusi berhasil ditambahkan')),
+      );
+
+      await _loadDistributions();
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isSubmittingDistribution = false);
+      setModalState?.call(() {});
+    }
+  }
+
+  void _showDistributionDialog() {
+    _recipientNameController.clear();
+    _recipientPhoneController.clear();
+    _recipientAddressController.clear();
+    _distributionAmountController.clear();
+    _distributionDescriptionController.clear();
+    _evidenceImages = [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (_, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Tambah Distribusi',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _campaign?['title'] ?? '',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const Divider(height: 24),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: _buildDistributionForm(setModalState),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDistributionForm(StateSetter setModalState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _formField('Nama Penerima *', _recipientNameController),
+        const SizedBox(height: 12),
+        _formField(
+          'Nomor HP Penerima',
+          _recipientPhoneController,
+          keyboardType: TextInputType.phone,
+        ),
+        const SizedBox(height: 12),
+        _fieldLabel('Alamat Penerima'),
+        TextFormField(
+          controller: _recipientAddressController,
+          maxLines: 2,
+          style: GoogleFonts.poppins(fontSize: 13.5),
+          decoration: _inputDecoration('Alamat lengkap penerima'),
+        ),
+        const SizedBox(height: 12),
+        _formField(
+          'Jumlah Distribusi (Rp) *',
+          _distributionAmountController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          prefixText: 'Rp ',
+        ),
+        const SizedBox(height: 12),
+        _fieldLabel('Keterangan'),
+        TextFormField(
+          controller: _distributionDescriptionController,
+          maxLines: 3,
+          style: GoogleFonts.poppins(fontSize: 13.5),
+          decoration: _inputDecoration('Contoh: Bantuan sembako tahap 1'),
+        ),
+        const SizedBox(height: 12),
+        _buildEvidencePicker(setModalState),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton(
+            onPressed: _isSubmittingDistribution
+                ? null
+                : () => _submitDistribution(setModalState: setModalState),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _isSubmittingDistribution
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(
+                    'Simpan Distribusi',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEvidencePicker(StateSetter setModalState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _fieldLabel('Bukti Distribusi (Opsional, bisa lebih dari 1)'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ..._evidenceImages.asMap().entries.map((entry) {
+              final index = entry.key;
+              final file = entry.value;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      file,
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: -6,
+                    right: -6,
+                    child: GestureDetector(
+                      onTap: () => _removeEvidenceImage(index,
+                          setModalState: setModalState),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close,
+                            size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }),
+            GestureDetector(
+              onTap: () => _pickEvidenceImages(setModalState: setModalState),
+              onLongPress: () =>
+                  _pickEvidenceImageFromCamera(setModalState: setModalState),
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Icon(Icons.add_photo_alternate_outlined,
+                    size: 24, color: Colors.grey.shade400),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tap untuk pilih dari galeri, tekan lama untuk kamera',
+          style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey.shade500),
+        ),
+      ],
+    );
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -488,6 +928,59 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
         backgroundColor: Colors.red.shade600,
       ),
     );
+  }
+
+  Future<void> _completeCampaign() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Tandai Selesai',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'Campaign ini akan ditandai sebagai selesai dan tidak bisa lagi menerima donasi. Lanjutkan?',
+          style: GoogleFonts.poppins(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('Tandai Selesai',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      _showError('Sesi tidak ditemukan, silakan login ulang');
+      return;
+    }
+
+    setState(() => _isProcessingApproval = true);
+
+    try {
+      await _service.completeCampaign(
+        token: token,
+        campaignId: widget.campaignId,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Campaign berhasil ditandai selesai')),
+      );
+      await _loadDetail();
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isProcessingApproval = false);
+    }
   }
 
   Future<void> _approveCampaign() async {
@@ -602,6 +1095,105 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
     } finally {
       if (mounted) setState(() => _isProcessingApproval = false);
     }
+  }
+
+  Future<void> _updateDistributionStatus(
+      int distributionId, String status) async {
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      _showError('Sesi tidak ditemukan, silakan login ulang');
+      return;
+    }
+
+    try {
+      await _service.updateDistributionStatus(
+        token: token,
+        distributionId: distributionId,
+        status: status,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'distributed'
+                ? 'Distribusi ditandai selesai'
+                : 'Distribusi dibatalkan',
+          ),
+        ),
+      );
+      await _loadDistributions();
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _confirmDeleteDistribution(int distributionId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Hapus Distribusi',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'Apakah Anda yakin ingin menghapus data distribusi ini?',
+          style: GoogleFonts.poppins(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = await context.read<AuthProvider>().getToken();
+    if (token == null) {
+      _showError('Sesi tidak ditemukan, silakan login ulang');
+      return;
+    }
+
+    try {
+      await _service.deleteDistribution(
+        token: token,
+        distributionId: distributionId,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Distribusi berhasil dihapus')),
+      );
+      await _loadDistributions();
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  void _openEvidenceGallery(List<dynamic> evidences, int initialIndex) {
+    final urls = evidences
+        .map((e) =>
+            _resolveImageUrl((e as Map)['evidence_url'] as String? ?? ''))
+        .where((u) => u.isNotEmpty)
+        .toList();
+
+    if (urls.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _EvidenceGalleryScreen(
+          imageUrls: urls,
+          initialIndex: initialIndex.clamp(0, urls.length - 1),
+        ),
+      ),
+    );
   }
 
   /// Panel aksi approve/reject, tampil jika campaign belum disetujui.
@@ -1314,13 +1906,27 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white),
               onSelected: (value) {
-                if (value == 'edit') {
+                if (value == 'complete') {
+                  _completeCampaign();
+                } else if (value == 'edit') {
                   _editCampaign();
                 } else if (value == 'delete') {
                   _deleteCampaign();
                 }
               },
               itemBuilder: (context) => [
+                if (_campaign?['status'] == 'active')
+                  const PopupMenuItem<String>(
+                    value: 'complete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_outline,
+                            size: 18, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Text('Tandai Selesai'),
+                      ],
+                    ),
+                  ),
                 const PopupMenuItem<String>(
                   value: 'edit',
                   child: Row(
@@ -2197,9 +2803,248 @@ class _CampaignDetailScreenState extends State<CampaignDetailScreen> {
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
             ],
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Distribusi Bantuan',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      if (_canManageCampaign())
+                        TextButton.icon(
+                          onPressed: _showDistributionDialog,
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Tambah'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (_isLoadingDistributions)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else if (_distributions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'Belum ada distribusi bantuan',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    )
+                  else
+                    ..._distributions
+                        .map((dist) => _buildDistributionItem(dist)),
+                ],
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDistributionItem(Map<String, dynamic> dist) {
+    final recipientName = dist['recipient_name'] as String? ?? 'Tanpa nama';
+    final amount = _parseDouble(dist['amount']) ?? 0;
+    final status = dist['status'] as String?;
+    final description = dist['description'] as String?;
+    final evidences = (dist['distribution_evidences'] as List?) ?? [];
+    final distributionId = _parseInt(dist['distribution_id']);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      recipientName,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    if (description != null && description.isNotEmpty)
+                      Text(
+                        description,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              Text(
+                _formatCurrency(amount),
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+
+          // 🔥 BARU: thumbnail bukti distribusi, tap untuk lihat fullscreen
+          if (evidences.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 56,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: evidences.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (context, index) {
+                  final url = _resolveImageUrl(
+                    (evidences[index] as Map)['evidence_url'] as String? ?? '',
+                  );
+                  return GestureDetector(
+                    onTap: () => _openEvidenceGallery(evidences, index),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        url,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return Container(
+                            width: 56,
+                            height: 56,
+                            color: Colors.grey.shade200,
+                            child: const Center(
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 56,
+                          height: 56,
+                          color: Colors.grey.shade200,
+                          child: Icon(Icons.broken_image_outlined,
+                              size: 18, color: Colors.grey.shade400),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _getDistributionStatusColor(status).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _getDistributionStatusLabel(status),
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: _getDistributionStatusColor(status),
+                  ),
+                ),
+              ),
+              // 🔥 indikator icon+angka lama DIHAPUS karena sudah ada thumbnail
+              const Spacer(),
+              if (_canManageCampaign() && distributionId != null)
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_horiz,
+                      size: 18, color: Colors.grey.shade600),
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) {
+                    if (value == 'distributed') {
+                      _updateDistributionStatus(distributionId, 'distributed');
+                    } else if (value == 'cancelled') {
+                      _updateDistributionStatus(distributionId, 'cancelled');
+                    } else if (value == 'delete') {
+                      _confirmDeleteDistribution(distributionId);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (status != 'distributed')
+                      const PopupMenuItem(
+                        value: 'distributed',
+                        child: Text('Tandai Terdistribusi'),
+                      ),
+                    if (status != 'cancelled')
+                      const PopupMenuItem(
+                        value: 'cancelled',
+                        child: Text('Batalkan'),
+                      ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Hapus', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2270,6 +3115,88 @@ class _StatItem extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _EvidenceGalleryScreen extends StatefulWidget {
+  final List<String> imageUrls;
+  final int initialIndex;
+
+  const _EvidenceGalleryScreen({
+    required this.imageUrls,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_EvidenceGalleryScreen> createState() => _EvidenceGalleryScreenState();
+}
+
+class _EvidenceGalleryScreenState extends State<_EvidenceGalleryScreen> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          '${_currentIndex + 1} / ${widget.imageUrls.length}',
+          style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+        ),
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.imageUrls.length,
+        onPageChanged: (index) => setState(() => _currentIndex = index),
+        itemBuilder: (context, index) {
+          return InteractiveViewer(
+            minScale: 1,
+            maxScale: 4,
+            child: Center(
+              child: Image.network(
+                widget.imageUrls[index],
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) => Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.broken_image_outlined,
+                        size: 48, color: Colors.grey.shade600),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Gagal memuat gambar',
+                      style: GoogleFonts.poppins(color: Colors.grey.shade400),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

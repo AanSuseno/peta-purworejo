@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -178,16 +180,24 @@ class EventCard extends StatelessWidget {
             children: [
               Stack(
                 children: [
+                  // Image with loading indicator
                   ConstrainedBox(
                     constraints: const BoxConstraints(
                       maxHeight: 500,
                     ),
                     child: coverImage != null
-                        ? Image.network(
-                            _resolveUrl(coverImage)!,
-                            width: double.infinity,
+                        ? FadeInImage(
+                            image: NetworkImage(_resolveUrl(coverImage)!),
                             fit: BoxFit.fitWidth,
-                            errorBuilder: (_, __, ___) => _coverFallback(),
+                            width: double.infinity,
+                            placeholder: const AssetImage(
+                              'assets/images/event_placeholder.png',
+                            ),
+                            placeholderErrorBuilder: (_, __, ___) =>
+                                _loadingPlaceholder(),
+                            imageErrorBuilder: (_, __, ___) => _coverFallback(),
+                            fadeInDuration: const Duration(milliseconds: 400),
+                            fadeOutDuration: const Duration(milliseconds: 200),
                           )
                         : SizedBox(
                             height: 200,
@@ -195,6 +205,13 @@ class EventCard extends StatelessWidget {
                             child: _coverFallback(),
                           ),
                   ),
+                  // Overlay loading indicator while image is loading
+                  if (coverImage != null)
+                    Positioned.fill(
+                      child: _ImageLoadingOverlay(
+                        imageUrl: _resolveUrl(coverImage)!,
+                      ),
+                    ),
                   Positioned(
                     top: 12,
                     right: 12,
@@ -430,6 +447,48 @@ class EventCard extends StatelessWidget {
     );
   }
 
+  Widget _loadingPlaceholder() {
+    return Container(
+      height: 200,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary.withOpacity(0.3),
+            AppColors.primaryDark.withOpacity(0.3)
+          ],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppColors.primary,
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Memuat gambar...',
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                color: Colors.white70,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _coverFallback() {
     return Container(
       decoration: BoxDecoration(
@@ -444,6 +503,157 @@ class EventCard extends StatelessWidget {
           Icons.event,
           size: 40,
           color: Colors.white.withOpacity(0.4),
+        ),
+      ),
+    );
+  }
+}
+
+// Custom widget to show loading overlay while image is loading
+class _ImageLoadingOverlay extends StatefulWidget {
+  final String imageUrl;
+
+  const _ImageLoadingOverlay({required this.imageUrl});
+
+  @override
+  State<_ImageLoadingOverlay> createState() => _ImageLoadingOverlayState();
+}
+
+class _ImageLoadingOverlayState extends State<_ImageLoadingOverlay>
+    with SingleTickerProviderStateMixin {
+  bool _isLoading = true;
+  late AnimationController _animationController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _checkImageLoaded();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkImageLoaded() async {
+    try {
+      final completer = Completer<void>();
+      final image = NetworkImage(widget.imageUrl);
+      final stream = image.resolve(const ImageConfiguration());
+      final listener = ImageStreamListener(
+        (_, __) {
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+        },
+        onError: (_, __) {
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+        },
+      );
+      stream.addListener(listener);
+      await completer.future;
+      stream.removeListener(listener);
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isLoading) return const SizedBox.shrink();
+
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.black.withOpacity(0.15),
+              Colors.black.withOpacity(0.05),
+            ],
+          ),
+        ),
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              return Opacity(
+                opacity: _pulseAnimation.value,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'Memuat gambar...',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );

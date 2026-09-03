@@ -171,3 +171,12 @@ const uploadDonation = multer({
 
 export const uploadDonationProof = uploadDonation.single("proof_image");
 export const uploadDonationGoodsPhoto = uploadDonation.single("goods_photo");
+
+export const uploadDistributionEvidence = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, "uploads/distributions/"),
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    }
+  })
+}).array("evidence_images", 10);

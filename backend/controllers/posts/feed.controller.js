@@ -30,7 +30,7 @@ export const getCommunityPosts = async (req, res) => {
         // Cek apakah user adalah member
         const userId = req.user?.id;
         let isMember = false;
-        
+
         if (userId) {
             const membership = await prisma.community_members.findFirst({
                 where: {
@@ -146,41 +146,18 @@ export const getCommunityPosts = async (req, res) => {
 
 export const getFeedPosts = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { page = 1, limit = 10, post_type } = req.query;
+        const { 
+            page = 1, 
+            limit = 10, 
+            post_type, 
+            search, 
+            category_id 
+        } = req.query;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const take = parseInt(limit);
 
-        // Dapatkan komunitas yang diikuti user
-        const userCommunities = await prisma.community_members.findMany({
-            where: {
-                user_id: userId,
-                status: 'active'
-            },
-            select: {
-                community_id: true
-            }
-        });
-
-        const communityIds = userCommunities.map(m => m.community_id);
-
-        if (communityIds.length === 0) {
-            return res.json({
-                success: true,
-                data: [],
-                message: "Anda belum bergabung dengan komunitas manapun",
-                pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    total: 0,
-                    totalPages: 0
-                }
-            });
-        }
-
         const where = {
-            community_id: { in: communityIds },
             status: 'active',
             visibility: 'public'
         };
@@ -189,9 +166,37 @@ export const getFeedPosts = async (req, res) => {
             where.post_type = post_type;
         }
 
+        if (category_id) {
+            const categoryIdInt = parseInt(category_id);
+
+            if (!isNaN(categoryIdInt)) {
+                where.communities = {
+                    category_id: categoryIdInt
+                };
+            }
+        }
+
+        if (search) {
+            where.OR = [
+                {
+                    title: {
+                        contains: search,
+                        mode: 'insensitive'
+                    }
+                },
+                {
+                    content: {
+                        contains: search,
+                        mode: 'insensitive'
+                    }
+                }
+            ];
+        }
+
         const [posts, total] = await Promise.all([
             prisma.posts.findMany({
                 where,
+
                 include: {
                     users: {
                         select: {
@@ -200,19 +205,23 @@ export const getFeedPosts = async (req, res) => {
                             profile_picture: true
                         }
                     },
+
                     communities: {
                         select: {
                             community_id: true,
                             community_name: true,
                             community_slug: true,
-                            logo: true
+                            logo: true,
+                            category_id: true
                         }
                     },
+
                     post_media: {
                         orderBy: {
                             sort_order: 'asc'
                         }
                     },
+
                     _count: {
                         select: {
                             post_likes: true,
@@ -221,45 +230,64 @@ export const getFeedPosts = async (req, res) => {
                         }
                     }
                 },
+
                 orderBy: {
                     created_at: 'desc'
                 },
+
                 skip,
                 take
             }),
-            prisma.posts.count({ where })
+
+            prisma.posts.count({
+                where
+            })
         ]);
 
         const formattedPosts = posts.map(post => ({
             ...post,
+
             likes_count: post._count.post_likes,
             comments_count: post._count.post_comments,
             participants_count: post._count.event_participants,
+
             is_event: post.post_type === 'event',
+
             is_liked: false,
             is_participant: false,
+
             event_start_time: post.event_start_time,
             event_end_time: post.event_end_time,
+
+            is_public: post.visibility === 'public',
+
             _count: undefined
         }));
 
         return res.json({
             success: true,
             data: formattedPosts,
+
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
                 total,
-                totalPages: Math.ceil(total / parseInt(limit))
+                totalPages: Math.ceil(
+                    total / parseInt(limit)
+                )
             }
         });
 
     } catch (error) {
         console.error("Get Feed Posts Error:", error);
+
         return res.status(500).json({
             success: false,
             message: "Gagal mengambil feed",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error:
+                process.env.NODE_ENV === 'development'
+                    ? error.message
+                    : undefined
         });
     }
 };

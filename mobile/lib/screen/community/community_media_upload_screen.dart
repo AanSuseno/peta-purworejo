@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile/constants/colors.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../provider/auth_provider.dart';
@@ -47,6 +50,54 @@ class _CommunityMediaUploadScreenState
     return '${AuthService.baseUrl}$path';
   }
 
+  // ============ IMAGE COMPRESSION ============
+  // Kompres berulang (turunkan quality tiap gagal) sampai ukurannya
+  // <= maxSizeBytes, atau berhenti di minQuality supaya hasilnya tidak
+  // sampai rusak parah kalau target memang sulit dicapai.
+  Future<File> _compressImage(
+    File file, {
+    required int maxSizeBytes,
+    int startQuality = 90,
+    int minQuality = 10,
+    int minWidth = 800,
+    int minHeight = 800,
+  }) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath =
+          '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_${p.basenameWithoutExtension(file.path)}.jpg';
+
+      int quality = startQuality;
+      File? result;
+
+      while (quality >= minQuality) {
+        final compressed = await FlutterImageCompress.compressAndGetFile(
+          file.absolute.path,
+          targetPath,
+          quality: quality,
+          minWidth: minWidth,
+          minHeight: minHeight,
+          format: CompressFormat.jpeg,
+        );
+
+        if (compressed == null) break;
+
+        final compressedFile = File(compressed.path);
+        final size = await compressedFile.length();
+
+        result = compressedFile; // simpan hasil terakhir sebagai fallback
+        if (size <= maxSizeBytes) break;
+
+        quality -= 15;
+      }
+
+      return result ?? file;
+    } catch (e) {
+      debugPrint('Gagal kompres gambar: $e');
+      return file; // fallback ke file asli kalau proses compress error
+    }
+  }
+
   Future<void> _pickAndCropLogo() async {
     final picked = await _pickImage();
     if (picked == null) return;
@@ -73,7 +124,17 @@ class _CommunityMediaUploadScreenState
     );
     if (cropped == null) return;
 
-    setState(() => _logoFile = File(cropped.path));
+    setState(() => _isUploadingLogo = true);
+    // Logo target maks 20KB -- ukurannya kecil (persegi, biasanya <=500px)
+    // jadi kompres agresif masih cukup aman secara visual.
+    final compressed = await _compressImage(
+      File(cropped.path),
+      maxSizeBytes: 20 * 1024,
+      minWidth: 400,
+      minHeight: 400,
+    );
+
+    setState(() => _logoFile = compressed);
     await _uploadLogo();
   }
 
@@ -98,7 +159,17 @@ class _CommunityMediaUploadScreenState
     );
     if (cropped == null) return;
 
-    setState(() => _bannerFile = File(cropped.path));
+    setState(() => _isUploadingBanner = true);
+    // Banner lebih lebar (16:9 full width) -- target lebih longgar supaya
+    // tidak pecah parah. Ubah maxSizeBytes ini kalau mau lebih kecil lagi.
+    final compressed = await _compressImage(
+      File(cropped.path),
+      maxSizeBytes: 150 * 1024,
+      minWidth: 1280,
+      minHeight: 720,
+    );
+
+    setState(() => _bannerFile = compressed);
     await _uploadBanner();
   }
 
@@ -148,9 +219,11 @@ class _CommunityMediaUploadScreenState
 
   Future<void> _uploadLogo() async {
     final token = await context.read<AuthProvider>().getToken();
-    if (token == null || _logoFile == null) return;
+    if (token == null || _logoFile == null) {
+      if (mounted) setState(() => _isUploadingLogo = false);
+      return;
+    }
 
-    setState(() => _isUploadingLogo = true);
     try {
       final updated = await _service.uploadLogo(
         token,
@@ -176,9 +249,11 @@ class _CommunityMediaUploadScreenState
 
   Future<void> _uploadBanner() async {
     final token = await context.read<AuthProvider>().getToken();
-    if (token == null || _bannerFile == null) return;
+    if (token == null || _bannerFile == null) {
+      if (mounted) setState(() => _isUploadingBanner = false);
+      return;
+    }
 
-    setState(() => _isUploadingBanner = true);
     try {
       final updated = await _service.uploadBanner(
         token,
@@ -243,7 +318,6 @@ class _CommunityMediaUploadScreenState
             ),
           ),
           const SizedBox(height: 24),
-
           Text(
             'Banner',
             style: GoogleFonts.poppins(
@@ -267,7 +341,6 @@ class _CommunityMediaUploadScreenState
             ),
           ),
           const SizedBox(height: 24),
-
           Text(
             'Logo',
             style: GoogleFonts.poppins(
@@ -290,7 +363,6 @@ class _CommunityMediaUploadScreenState
               child: _logoUploadContent(),
             ),
           ),
-
           const SizedBox(height: 36),
           SizedBox(
             width: double.infinity,

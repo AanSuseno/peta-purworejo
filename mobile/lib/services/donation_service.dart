@@ -931,6 +931,423 @@ class DonationService {
       throw Exception('Gagal terhubung ke server');
     }
   }
+
+  // ==================== DISTRIBUTION ENDPOINTS ====================
+
+  /// GET /donations/campaigns/:id/distributions - Daftar distribusi campaign
+  Future<Map<String, dynamic>> getCampaignDistributions({
+    required String token,
+    required int campaignId,
+    int page = 1,
+    int limit = 20,
+    String? status,
+  }) async {
+    const tag = 'getCampaignDistributions';
+    _debugLog(tag, 'Fetching distributions for campaign: $campaignId');
+
+    final queryParams = <String, String>{
+      'page': '$page',
+      'limit': '$limit',
+      if (status != null && status.isNotEmpty) 'status': status,
+    };
+
+    final uri = Uri.parse(
+      '$baseUrl/donations/campaigns/$campaignId/distributions',
+    ).replace(queryParameters: queryParams);
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        return data;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal memuat daftar distribusi');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
+
+  /// GET /donations/distributions/:id - Detail distribusi
+  Future<Map<String, dynamic>> fetchDistributionById({
+    required String token,
+    required int distributionId,
+  }) async {
+    const tag = 'fetchDistributionById';
+    _debugLog(tag, 'Fetching distribution ID: $distributionId');
+
+    final uri = Uri.parse('$baseUrl/donations/distributions/$distributionId');
+
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Distribusi tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal memuat detail distribusi');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
+
+  /// POST /donations/campaigns/:id/distributions - Buat distribusi baru (dengan bukti/evidence)
+  Future<Map<String, dynamic>> createDistribution({
+    required String token,
+    required int campaignId,
+    required String recipientName,
+    required double amount,
+    String? recipientPhone,
+    String? recipientAddress,
+    String? description,
+    List<File>? evidenceImages,
+  }) async {
+    const tag = 'createDistribution';
+    _debugLog(tag, 'Creating distribution for campaign: $campaignId');
+
+    final uri = Uri.parse(
+      '$baseUrl/donations/campaigns/$campaignId/distributions',
+    );
+
+    try {
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..fields['recipient_name'] = recipientName.trim()
+        ..fields['amount'] = amount.toString();
+
+      if (recipientPhone != null && recipientPhone.isNotEmpty) {
+        request.fields['recipient_phone'] = recipientPhone.trim();
+      }
+      if (recipientAddress != null && recipientAddress.isNotEmpty) {
+        request.fields['recipient_address'] = recipientAddress.trim();
+      }
+      if (description != null && description.isNotEmpty) {
+        request.fields['description'] = description.trim();
+      }
+
+      if (evidenceImages != null && evidenceImages.isNotEmpty) {
+        for (final image in evidenceImages) {
+          final fileName =
+              'evidence_${DateTime.now().millisecondsSinceEpoch}_${evidenceImages.indexOf(image)}.jpg';
+
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'evidence_images',
+              image.path,
+              filename: fileName,
+              contentType: MediaType('image', 'jpeg'),
+            ),
+          );
+        }
+        _debugLog(tag, '${evidenceImages.length} evidence image(s) attached');
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      _debugLog(tag, 'Response status: ${response.statusCode}');
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        _debugLog(tag, '✅ Distribution created successfully');
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Anda tidak berhak membuat distribusi',
+        );
+      }
+
+      if (response.statusCode == 400) {
+        throw Exception(data['message'] ?? 'Data distribusi tidak valid');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal membuat distribusi');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
+
+  /// POST /donations/distributions/:id/evidence - Tambah bukti ke distribusi yang sudah ada
+  Future<List<Map<String, dynamic>>> addDistributionEvidence({
+    required String token,
+    required int distributionId,
+    required List<File> evidenceImages,
+  }) async {
+    const tag = 'addDistributionEvidence';
+    _debugLog(tag, 'Adding evidence to distribution: $distributionId');
+
+    final uri = Uri.parse(
+      '$baseUrl/donations/distributions/$distributionId/evidence',
+    );
+
+    try {
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $token';
+
+      for (final image in evidenceImages) {
+        final fileName =
+            'evidence_${DateTime.now().millisecondsSinceEpoch}_${evidenceImages.indexOf(image)}.jpg';
+
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'evidence_images',
+            image.path,
+            filename: fileName,
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      _debugLog(tag, 'Response status: ${response.statusCode}');
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        _debugLog(tag, '✅ Evidence added successfully');
+        final rawList = (data['data'] as List?) ?? [];
+        return rawList
+            .whereType<Map>()
+            .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+            .toList();
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Anda tidak berhak menambahkan bukti',
+        );
+      }
+
+      throw Exception(data['message'] ?? 'Gagal menambahkan bukti distribusi');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
+
+  /// PUT /donations/distributions/:id - Update status/data distribusi
+  Future<Map<String, dynamic>> updateDistributionStatus({
+    required String token,
+    required int distributionId,
+    String? status, // 'pending', 'distributed', 'cancelled'
+    String? recipientName,
+    String? recipientPhone,
+    String? recipientAddress,
+    double? amount,
+    String? description,
+  }) async {
+    const tag = 'updateDistributionStatus';
+    _debugLog(tag, 'Updating distribution ID: $distributionId');
+
+    final uri = Uri.parse('$baseUrl/donations/distributions/$distributionId');
+
+    final body = <String, dynamic>{};
+
+    if (status != null && status.isNotEmpty) body['status'] = status;
+    if (recipientName != null && recipientName.isNotEmpty) {
+      body['recipient_name'] = recipientName.trim();
+    }
+    if (recipientPhone != null) body['recipient_phone'] = recipientPhone.trim();
+    if (recipientAddress != null) {
+      body['recipient_address'] = recipientAddress.trim();
+    }
+    if (amount != null) body['amount'] = amount;
+    if (description != null) body['description'] = description.trim();
+
+    try {
+      final response = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      _debugLog(tag, 'Response status: ${response.statusCode}');
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Distribution updated successfully');
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Anda tidak berhak mengubah distribusi ini',
+        );
+      }
+
+      if (response.statusCode == 400) {
+        throw Exception(data['message'] ?? 'Data yang dikirim tidak valid');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Distribusi tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal memperbarui distribusi');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
+
+  /// DELETE /donations/distributions/:id - Hapus distribusi
+  Future<void> deleteDistribution({
+    required String token,
+    required int distributionId,
+  }) async {
+    const tag = 'deleteDistribution';
+    _debugLog(tag, 'Deleting distribution ID: $distributionId');
+
+    final uri = Uri.parse('$baseUrl/donations/distributions/$distributionId');
+
+    try {
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Distribution deleted successfully');
+        return;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(
+          data['message'] ?? 'Anda tidak berhak menghapus distribusi ini',
+        );
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Distribusi tidak ditemukan');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal menghapus distribusi');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
+
+  /// PUT /donations/campaigns/:id/complete - Tandai campaign selesai (admin komunitas/founder/creator)
+  Future<Map<String, dynamic>> completeCampaign({
+    required String token,
+    required int campaignId,
+  }) async {
+    const tag = 'completeCampaign';
+    _debugLog(tag, 'Completing campaign ID: $campaignId');
+
+    final uri = Uri.parse('$baseUrl/donations/campaigns/$campaignId/complete');
+
+    try {
+      final response = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      final data = _parseResponse(tag, response);
+
+      if (response.statusCode == 200) {
+        _debugLog(tag, '✅ Campaign marked as completed');
+        return data['data'] as Map<String, dynamic>;
+      }
+
+      if (response.statusCode == 401) {
+        throw AuthException('Token tidak valid atau kadaluarsa');
+      }
+
+      if (response.statusCode == 403) {
+        throw Exception(data['message'] ??
+            'Anda tidak berhak menandai campaign ini selesai');
+      }
+
+      if (response.statusCode == 400 || response.statusCode == 404) {
+        throw Exception(data['message'] ?? 'Gagal menandai campaign selesai');
+      }
+
+      throw Exception(data['message'] ?? 'Gagal menandai campaign selesai');
+    } on http.ClientException {
+      throw Exception('Gagal terhubung ke server');
+    } catch (e) {
+      _debugError(tag, e);
+      rethrow;
+    }
+  }
 }
 
 // AuthException untuk error autentikasi
