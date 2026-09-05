@@ -1,4 +1,5 @@
 import prisma from "../../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 
 export const registerForEvent = async (req, res) => {
     try {
@@ -340,22 +341,45 @@ export const updateParticipantStatus = async (req, res) => {
     }
 };
 
+/**
+ * Ambil daftar event publik.
+ *
+ * PERBAIKAN vs versi lama:
+ * 1. Urutan sekarang: event yang belum lewat (event_date >= sekarang)
+ *    ditampilkan dulu, diurutkan dari yang paling dekat waktunya.
+ *    Event yang sudah lewat ditaruh SETELAH itu, diurutkan dari yang
+ *    paling baru lewat ke yang paling lama lewat — jadi yang paling
+ *    lama lewat ada di paling bawah. Sebelumnya sort cuma
+ *    `event_date: 'asc'`, yang bikin event lama (tanggal kecil) selalu
+ *    nangkring di paling atas.
+ * 2. Event yang sudah lewat TIDAK lagi disembunyikan cuma karena field
+ *    `event_status` di database belum sempat diupdate jadi 'completed'
+ *    (kalau tidak ada job yang update field ini secara berkala, field
+ *    ini gampang basi/nyangkut di 'upcoming'). Yang otomatis
+ *    disembunyikan cuma yang statusnya 'cancelled', kecuali memang
+ *    difilter eksplisit.
+ * 3. `event_status` yang dikirim ke frontend sekarang dihitung ulang
+ *    real-time berdasarkan `event_date` vs waktu sekarang (kecuali
+ *    'cancelled', yang tetap dihormati apa adanya), supaya badge di
+ *    kartu event ("Akan datang" dll) tidak salah tampil untuk event
+ *    yang tanggalnya sudah lewat.
+ */
 export const getAllPublicEvents = async (req, res) => {
-    console.log(req.query)
     try {
         const { page = 1, limit = 20, search, status } = req.query;
-        
+
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const take = parseInt(limit);
+        const validStatuses = ['upcoming', 'ongoing', 'completed', 'cancelled'];
+        const hasValidStatusFilter = status && validStatuses.includes(status);
 
-        // Build where clause
+        // ---- WHERE clause versi Prisma Client (dipakai buat hitung total) ----
         const where = {
             post_type: 'event',
             visibility: 'public',
             status: 'active'
         };
 
-        // Filter by search (title or content)
         if (search) {
             where.OR = [
                 { title: { contains: search, mode: 'insensitive' } },
@@ -363,96 +387,157 @@ export const getAllPublicEvents = async (req, res) => {
             ];
         }
 
-        // Filter by event status
-        if (status && ['upcoming', 'ongoing', 'completed', 'cancelled'].includes(status)) {
+        if (hasValidStatusFilter) {
             where.event_status = status;
+        } else {
+            // Default: sembunyikan yang cancelled saja. Event yang sudah
+            // lewat (completed) TETAP ditampilkan, tapi di bagian bawah
+            // (lihat urutan raw query di bawah).
+            where.event_status = { not: 'cancelled' };
         }
 
-        // Get current date for filtering upcoming events
-        const currentDate = new Date();
-        
-        // If no status filter, exclude completed and cancelled by default
-        if (!status) {
-            where.event_status = {
-                notIn: ['completed', 'cancelled']
-            };
+        const total = await prisma.posts.count({ where });
+
+        if (total === 0) {
+            return res.json({
+                success: true,
+                message: "Berhasil mengambil daftar event publik",
+                data: [],
+                pagination: { page: parseInt(page), limit: take, total: 0, totalPages: 0 },
+                filters: { search: search || null, status: status || null }
+            });
         }
 
-        // Get events with pagination
-        const [events, total] = await Promise.all([
-            prisma.posts.findMany({
-                where,
-                include: {
-                    users: {
-                        select: {
-                            user_id: true,
-                            full_name: true,
-                            profile_picture: true
-                        }
-                    },
-                    communities: {
-                        select: {
-                            community_id: true,
-                            community_name: true,
-                            logo: true,
-                            community_slug: true
-                        }
-                    },
-                    post_media: {
-                        select: {
-                            media_id: true,
-                            media_url: true,
-                            media_type: true,
-                            is_cover: true
-                        },
-                        orderBy: {
-                            sort_order: 'asc'
-                        }
-                    },
-                    event_participants: {
-                        where: {
-                            status: 'registered'
-                        },
-                        select: {
-                            participant_id: true,
-                            user_id: true,
-                            status: true
-                        }
-                    },
-                    _count: {
-                        select: {
-                            event_participants: {
-                                where: {
-                                    status: 'registered'
-                                }
-                            },
-                            post_likes: true,
-                            post_comments: true
-                        }
+        // ---- Urutan khusus lewat raw query (Prisma tidak bisa expresikan
+        //      "urutan asc untuk yang akan datang, tapi desc untuk yang
+        //      sudah lewat" lewat orderBy biasa) ----
+        const conditions = [
+            Prisma.sql`post_type = 'event'`,
+            Prisma.sql`visibility = 'public'`,
+            Prisma.sql`status = 'active'`
+        ];
+
+        if (search) {
+            const pattern = `%${search}%`;
+            conditions.push(
+                Prisma.sql`(title ILIKE ${pattern} OR content ILIKE ${pattern})`
+            );
+        }
+
+        if (hasValidStatusFilter) {
+            conditions.push(Prisma.sql`event_status = ${status}`);
+        } else {
+            conditions.push(Prisma.sql`event_status <> 'cancelled'`);
+        }
+
+        const orderedRows = await prisma.$queryRaw`
+            SELECT post_id FROM posts
+            WHERE ${Prisma.join(conditions, ' AND ')}
+            ORDER BY
+                CASE WHEN event_date >= NOW() THEN 0 ELSE 1 END ASC,
+                CASE WHEN event_date >= NOW() THEN event_date END ASC,
+                CASE WHEN event_date < NOW() THEN event_date END DESC
+            LIMIT ${take} OFFSET ${skip}
+        `;
+
+        const orderedIds = orderedRows.map((r) => r.post_id);
+
+        if (orderedIds.length === 0) {
+            return res.json({
+                success: true,
+                message: "Berhasil mengambil daftar event publik",
+                data: [],
+                pagination: {
+                    page: parseInt(page),
+                    limit: take,
+                    total,
+                    totalPages: Math.ceil(total / take)
+                },
+                filters: { search: search || null, status: status || null }
+            });
+        }
+
+        const events = await prisma.posts.findMany({
+            where: { post_id: { in: orderedIds } },
+            include: {
+                users: {
+                    select: {
+                        user_id: true,
+                        full_name: true,
+                        profile_picture: true
                     }
                 },
-                orderBy: [
-                    {
-                        event_date: 'asc' // Upcoming events first
-                    },
-                    {
-                        created_at: 'desc' // For events with same date, newest first
+                communities: {
+                    select: {
+                        community_id: true,
+                        community_name: true,
+                        logo: true,
+                        community_slug: true
                     }
-                ],
-                skip,
-                take
-            }),
-            prisma.posts.count({ where })
-        ]);
+                },
+                post_media: {
+                    select: {
+                        media_id: true,
+                        media_url: true,
+                        media_type: true,
+                        is_cover: true
+                    },
+                    orderBy: {
+                        sort_order: 'asc'
+                    }
+                },
+                event_participants: {
+                    where: {
+                        status: 'registered'
+                    },
+                    select: {
+                        participant_id: true,
+                        user_id: true,
+                        status: true
+                    }
+                },
+                _count: {
+                    select: {
+                        event_participants: {
+                            where: {
+                                status: 'registered'
+                            }
+                        },
+                        post_likes: true,
+                        post_comments: true
+                    }
+                }
+            }
+        });
 
-        // Format response data
-        const formattedEvents = events.map(event => ({
-            ...event,
-            event_registered_count: event._count.event_participants,
-            total_likes: event._count.post_likes,
-            total_comments: event._count.post_comments,
-            participants: event.event_participants,
-        }));
+        // `findMany` dengan `post_id: { in: [...] }` TIDAK menjamin urutan
+        // hasil sama dengan urutan array `in`, jadi kita urutkan ulang
+        // manual sesuai `orderedIds` dari raw query di atas.
+        const eventsById = new Map(events.map((e) => [e.post_id, e]));
+        const sortedEvents = orderedIds
+            .map((id) => eventsById.get(id))
+            .filter(Boolean);
+
+        const now = new Date();
+
+        // Format response data + hitung ulang status secara real-time
+        // berdasarkan tanggal, bukan cuma percaya field statis di DB.
+        const formattedEvents = sortedEvents.map((event) => {
+            let computedStatus = event.event_status;
+            if (event.event_status !== 'cancelled' && event.event_date) {
+                computedStatus = new Date(event.event_date) > now ? 'upcoming' : 'completed';
+            }
+
+            return {
+                ...event,
+                event_status: computedStatus,
+                raw_event_status: event.event_status,
+                event_registered_count: event._count.event_participants,
+                total_likes: event._count.post_likes,
+                total_comments: event._count.post_comments,
+                participants: event.event_participants,
+            };
+        });
 
         return res.json({
             success: true,
@@ -460,9 +545,9 @@ export const getAllPublicEvents = async (req, res) => {
             data: formattedEvents,
             pagination: {
                 page: parseInt(page),
-                limit: parseInt(limit),
+                limit: take,
                 total,
-                totalPages: Math.ceil(total / parseInt(limit))
+                totalPages: Math.ceil(total / take)
             },
             filters: {
                 search: search || null,
